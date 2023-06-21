@@ -1,0 +1,252 @@
+From e6a648123c894ab55d7e7403f49f443e6ff10e85 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?J=C3=A9r=C3=A9mie=20Galarneau?=
+ <jeremie.galarneau@efficios.com>
+Date: Wed, 9 Nov 2022 15:44:09 -0500
+Subject: [PATCH 04/23] Support per-architecture syscall in/out parameter
+ descriptions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The number of arguments of some syscalls varies from one architecture to
+another. For instance, fanotify_mark, on most architectures has the
+following signature:
+
+fanotify_mark(int fanotify_fd, unsigned int flags, __u64 mask, int dfd, const char *pathname)
+
+However, on x86-32, the 64-bit mask parameter is split into two 32-bit parts:
+fanotify_mark(int fanotify_fd, unsigned int flags, u32 mask_lo, u32 mask_hi, int dfd, const char *pathname)
+
+Since the header generation scripts do not expect this, generating the
+headers for x86-32 fails with:
+  Error: argument number (6) is larger than number of syscall arguments (5)
+
+The scripts are modified to search for an in/out description in a
+per-architecture description list. For the moment only fanotify_mark()
+has such an override.
+
+Upstream-Status: Backport
+
+Signed-off-by: Jérémie Galarneau <jeremie.galarneau@efficios.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Change-Id: I7252f41f1d08100d099deab7328f7fc784e1c484
+---
+ .../syscalls/lttng-get-syscall-inout.sh       | 53 +++++++++++++-----
+ .../lttng-syscalls-generate-headers.sh        | 56 ++++++++++---------
+ .../table-syscall-inout-x86-32-override.txt   |  1 +
+ 3 files changed, 72 insertions(+), 38 deletions(-)
+ create mode 100644 include/instrumentation/syscalls/table-syscall-inout-x86-32-override.txt
+
+diff --git a/include/instrumentation/syscalls/lttng-get-syscall-inout.sh b/include/instrumentation/syscalls/lttng-get-syscall-inout.sh
+index 8ddaad8d..61bd86a4 100755
+--- a/include/instrumentation/syscalls/lttng-get-syscall-inout.sh
++++ b/include/instrumentation/syscalls/lttng-get-syscall-inout.sh
+@@ -4,16 +4,16 @@
+ # example usage:
+ # lttng-get-syscall-inout.sh table-syscall-inout.txt select 1
+ 
+-FILENAME=$1
++ARCH_NAME=$1
+ SYSCALL_NAME=$2
+ ARG_NR=$3
+ TMPFILE=$(mktemp)
++GENERIC_INOUT_DESCRIPTION_FILE="$(dirname "$0")/table-syscall-inout.txt"
+ 
+ # Delete temp file on exit
+ trap 'rm -f "$TMPFILE"' EXIT
+ 
+-
+-if [ x"${FILENAME}" = x"" ]; then
++if [ x"${GENERIC_INOUT_DESCRIPTION_FILE}" = x"" ]; then
+ 	echo "Error: Please specify input file name as first argument" >&2
+ 	exit 1
+ fi
+@@ -28,21 +28,48 @@ if [[ x"${ARG_NR}" = x"" || ${ARG_NR} == 0 ]]; then
+ 	exit 1
+ fi
+ 
++# Search for the in/out description of a syscall. This function attempts to find
++# a matching description in the per-architecture description override file (if it exists)
++# and falls back to the generic description file otherwise.
++#
++# Returns 0 if a description was found and written to the output file, 1 otherwise.
++function write_inout_description ()
++{
++	local arch_name=$1
++	local syscall_name=$2
++	local output_file=$3
++	local description_files=("$(dirname "$0")/table-syscall-inout-${arch_name}-override.txt" "$GENERIC_INOUT_DESCRIPTION_FILE")
++	local found=0
++
++	for file in ${description_files[@]}; do
++		if [ ! -f "$file" ]; then
++			continue
++		fi
++
++		# Look for the syscall's in/out description
++		grep "syscall ${syscall_name} " "${file}" > "${output_file}" || true
++
++		# Error out if we got more than one syscall
++		local match_count=$(wc -l < "${output_file}")
++		if [ "${match_count}" -gt 1 ]; then
++			# Fatal error; invalid description file
++			echo "Error: more than one system call match" >&2
++			exit 1
++		elif [ "${match_count}" -eq 1 ]; then
++			# Description found
++			return 0
++		fi
++	done
++
++	return 1
++}
++
+ # Abort on error and undefined variable
+ set -eu
+ 
+-# Get the required syscall
+-grep "syscall ${SYSCALL_NAME} " "${FILENAME}" > "${TMPFILE}" || true
+-
+-# Error out if we got more than one syscall
+-NR_MATCH=$(wc -l < "${TMPFILE}")
+-if [ "${NR_MATCH}" -gt 1 ]; then
+-	echo "Error: more than one system call match" >&2
+-	exit 1
+-fi
+ 
+ # Default to sc_inout for unknown syscalls
+-if [ "${NR_MATCH}" -eq 0 ]; then
++if ! write_inout_description "$ARCH_NAME" "$SYSCALL_NAME" "$TMPFILE"; then
+ 	echo "Warning: no match for syscall '${SYSCALL_NAME}', set to 'inout'" >&2
+ 	# no match, default to inout
+ 	echo "sc_inout"
+diff --git a/include/instrumentation/syscalls/lttng-syscalls-generate-headers.sh b/include/instrumentation/syscalls/lttng-syscalls-generate-headers.sh
+index df29abf7..b93bf7c7 100755
+--- a/include/instrumentation/syscalls/lttng-syscalls-generate-headers.sh
++++ b/include/instrumentation/syscalls/lttng-syscalls-generate-headers.sh
+@@ -6,14 +6,15 @@
+ #
+ # example usage:
+ #
+-# lttng-syscalls-generate-headers.sh <type> <input_dir> <input_filename_in_dir> <bitness>
+-# lttng-syscalls-generate-headers.sh integers 3.0.4 x86-64-syscalls 64
+-# lttng-syscalls-generate-headers.sh pointers 3.0.4 x86-64-syscalls 64
++# lttng-syscalls-generate-headers.sh <type> <input_dir> <input_filename_in_dir> <arch_name> <bitness>
++# lttng-syscalls-generate-headers.sh integers 3.0.4 x86-64-syscalls x86-64 64
++# lttng-syscalls-generate-headers.sh pointers 3.0.4 x86-64-syscalls x86-64 64
+ 
+ CLASS=$1
+ VERSIONDIR=$2
+ INPUTFILE=$3
+-BITNESS=$4
++ARCH_NAME=$4
++BITNESS=$5
+ INPUT=${VERSIONDIR}/${INPUTFILE}
+ HEADER=headers/${INPUTFILE}_${CLASS}.h
+ 
+@@ -32,6 +33,11 @@ if [ x"$BITNESS" != x"32" ] && [ x"$BITNESS" != x"64" ]; then
+ 	exit 1
+ fi
+ 
++if [ x"$ARCH_NAME" = x"" ]; then
++	echo "Error: Please specify the architecture name as fourth argument" >&2
++	exit 1
++fi
++
+ # Abort on error and undefined variable
+ set -eu
+ 
+@@ -134,7 +140,7 @@ fi
+ NRARGS=1
+ grep "^syscall [^ ]* nr [^ ]* nbargs ${NRARGS} " "${SRCFILE}" | while read -r LINE; do
+ 	SC_NAME=$(echo "${LINE}" | perl -p -e 's/^syscall ([^ ]*) .*/$1/g')
+-	ARG1=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 1)
++	ARG1=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 1)
+ 
+ 	echo Syscall: "${SC_NAME}" "${ARG1}"
+ 
+@@ -157,8 +163,8 @@ done
+ NRARGS=2
+ grep "^syscall [^ ]* nr [^ ]* nbargs ${NRARGS} " "${SRCFILE}" | while read -r LINE; do
+ 	SC_NAME=$(echo "${LINE}" | perl -p -e 's/^syscall ([^ ]*) .*/$1/g')
+-	ARG1=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 1)
+-	ARG2=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 2)
++	ARG1=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 1)
++	ARG2=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 2)
+ 
+ 	echo Syscall: "${SC_NAME}" "${ARG1}" "${ARG2}"
+ 
+@@ -181,9 +187,9 @@ done
+ NRARGS=3
+ grep "^syscall [^ ]* nr [^ ]* nbargs ${NRARGS} " "${SRCFILE}" | while read -r LINE; do
+ 	SC_NAME=$(echo "${LINE}" | perl -p -e 's/^syscall ([^ ]*) .*/$1/g')
+-	ARG1=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 1)
+-	ARG2=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 2)
+-	ARG3=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 3)
++	ARG1=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 1)
++	ARG2=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 2)
++	ARG3=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 3)
+ 
+ 	echo Syscall: "${SC_NAME}" "${ARG1}" "${ARG2}" "${ARG3}"
+ 
+@@ -207,10 +213,10 @@ done
+ NRARGS=4
+ grep "^syscall [^ ]* nr [^ ]* nbargs ${NRARGS} " "${SRCFILE}" | while read -r LINE; do
+ 	SC_NAME=$(echo "${LINE}" | perl -p -e 's/^syscall ([^ ]*) .*/$1/g')
+-	ARG1=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 1)
+-	ARG2=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 2)
+-	ARG3=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 3)
+-	ARG4=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 4)
++	ARG1=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 1)
++	ARG2=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 2)
++	ARG3=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 3)
++	ARG4=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 4)
+ 
+ 	echo Syscall: "${SC_NAME}" "${ARG1}" "${ARG2}" "${ARG3}" "${ARG4}"
+ 
+@@ -233,11 +239,11 @@ done
+ NRARGS=5
+ grep "^syscall [^ ]* nr [^ ]* nbargs ${NRARGS} " "${SRCFILE}" | while read -r LINE; do
+ 	SC_NAME=$(echo "${LINE}" | perl -p -e 's/^syscall ([^ ]*) .*/$1/g')
+-	ARG1=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 1)
+-	ARG2=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 2)
+-	ARG3=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 3)
+-	ARG4=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 4)
+-	ARG5=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 5)
++	ARG1=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 1)
++	ARG2=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 2)
++	ARG3=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 3)
++	ARG4=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 4)
++	ARG5=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 5)
+ 
+ 	echo Syscall: "${SC_NAME}" "${ARG1}" "${ARG2}" "${ARG3}" "${ARG4}" "${ARG5}"
+ 
+@@ -261,12 +267,12 @@ done
+ NRARGS=6
+ grep "^syscall [^ ]* nr [^ ]* nbargs ${NRARGS} " "${SRCFILE}" | while read -r LINE; do
+ 	SC_NAME=$(echo "${LINE}" | perl -p -e 's/^syscall ([^ ]*) .*/$1/g')
+-	ARG1=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 1)
+-	ARG2=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 2)
+-	ARG3=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 3)
+-	ARG4=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 4)
+-	ARG5=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 5)
+-	ARG6=$(./lttng-get-syscall-inout.sh table-syscall-inout.txt "${SC_NAME}" 6)
++	ARG1=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 1)
++	ARG2=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 2)
++	ARG3=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 3)
++	ARG4=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 4)
++	ARG5=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 5)
++	ARG6=$(./lttng-get-syscall-inout.sh "${ARCH_NAME}" "${SC_NAME}" 6)
+ 
+ 	echo Syscall: "${SC_NAME}" "${ARG1}" "${ARG2}" "${ARG3}" "${ARG4}" "${ARG5}" "${ARG6}"
+ 
+diff --git a/include/instrumentation/syscalls/table-syscall-inout-x86-32-override.txt b/include/instrumentation/syscalls/table-syscall-inout-x86-32-override.txt
+new file mode 100644
+index 00000000..4ddb5974
+--- /dev/null
++++ b/include/instrumentation/syscalls/table-syscall-inout-x86-32-override.txt
+@@ -0,0 +1 @@
++syscall fanotify_mark nbargs 6 rw: (r, r, r, r, r, r)
+-- 
+2.34.1
+

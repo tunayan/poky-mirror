@@ -1,0 +1,59 @@
+From b0934ea5e0127f5675692342088c79c617124f52 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?J=C3=A9r=C3=A9mie=20Galarneau?=
+ <jeremie.galarneau@efficios.com>
+Date: Wed, 9 Nov 2022 17:20:06 -0500
+Subject: [PATCH 11/23] Fix: define old_sigaction as compat_old_sigaction in
+ x86-32 compat
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In a follow-up patch which updates the instrumentation for x86-32, the
+instrumentation of the old_sigaction() syscall would fail to build when
+targeting a 64-bit kernel.
+
+In that context, old_sigaction becomes compat_old_sigaction which is a
+syscall that can be disabled (it was superseded by rt_sigaction a long
+time ago).
+
+Upstream-Status: Backport
+
+Signed-off-by: Jérémie Galarneau <jeremie.galarneau@efficios.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Change-Id: I633c80e03947a81d1b5c93f8f95a61feb7c34884
+---
+ .../x86-32-syscalls_pointers_override.h        | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h b/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h
+index e93213f6..5689bda4 100644
+--- a/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h
++++ b/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h
+@@ -11,6 +11,24 @@
+ #  define OVERRIDE_32_chown16
+ # endif
+ 
++#ifdef CONFIG_X86_64
++#if CONFIG_COMPAT_OLD_SIGACTION
++/*
++ * From the point of view of the 64-bit ABI, old_sigaction
++ * becomes compat_old_sigaction.
++ */
++#define old_sigaction compat_old_sigaction
++#else /* CONFIG_COMPAT_OLD_SIGACTION */
++/*
++ * The target 64-bit kernel does not enable the support for
++ * the 32-bit compat version of OLD_SIGACTION. Defining
++ * OVERRIDE_32_sigaction ensures we don't build a tracepoint
++ * for this syscall.
++ */
++#define OVERRIDE_32_sigaction
++#endif /* CONFIG_COMPAT_OLD_SIGACTION */
++#endif
++
+ #define OVERRIDE_32_pipe
+ #define OVERRIDE_64_pipe
+ SC_LTTNG_TRACEPOINT_EVENT(pipe,
+-- 
+2.34.1
+

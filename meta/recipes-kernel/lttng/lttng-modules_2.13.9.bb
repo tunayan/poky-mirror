@@ -15,6 +15,29 @@ SRC_URI = "https://lttng.org/files/${BPN}/${BPN}-${PV}.tar.bz2 \
            file://0002-fix-uuid-Decouple-guid_t-and-uuid_le-types-and-respe.patch \
            file://0003-fix-btrfs-pass-find_free_extent_ctl-to-allocator-tra.patch \
            file://0004-fix-net-add-location-to-trace_consume_skb-v6.3.patch \
+file://0001-Fix-syscalls-extractor-kallsyms_lookup_name-no-longe.patch \
+file://0002-Add-x86-32-syscall-list-for-kernel-6.0.7.patch \
+file://0003-Add-_time32-suffixed-variants-of-syscalls-to-table-s.patch \
+file://0004-Support-per-architecture-syscall-in-out-parameter-de.patch \
+file://0005-Add-x86-64-syscall-list-for-kernel-6.0.7.patch \
+file://0006-Add-arm-64-syscall-list-for-kernel-6.0.7.patch \
+file://0007-Add-arm-32-syscall-list-for-kernel-6.0.7.patch \
+file://0008-syscall-instrumentation-add-missing-forward-declarat.patch \
+file://0009-Add-generated-x86-64-syscall-instrumentation-for-ker.patch \
+file://0010-Add-generated-arm-64-syscall-instrumentation-for-ker.patch \
+file://0011-Fix-define-old_sigaction-as-compat_old_sigaction-in-.patch \
+file://0012-Add-generated-x86-32-syscall-instrumentation-for-ker.patch \
+file://0013-Add-generated-arm-32-syscall-instrumentation-for-ker.patch \
+file://0014-Fix-add-missing-typedef-and-forward-declarations-for.patch \
+file://0015-Fix-system-call-instrumentation-build-failure-on-v3..patch \
+file://0016-Fix-Use-ifdef-for-CONFIG_COMPAT_OLD_SIGACTION.patch \
+file://0017-Fix-define-old_sigaction-as-compat_old_sigaction-in-.patch \
+file://0018-Build-fix-arm64-incomplete-landlock_rule_type-type.patch \
+file://0019-Cleanup-unused-Makefile.patch \
+file://0020-Split-syscalls-headers-and-tools.patch \
+file://0021-Update-syscall-inout-table.patch \
+file://0022-Fix-syscall-generator-scripts.patch \
+file://0023-syscall-inout-table-fix-old_select-and-old_mmap.patch \
            "
 
 # Use :append here so that the patch is applied also when using devupstream

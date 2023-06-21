@@ -1,0 +1,57 @@
+From 23f55ed0d688d9114863e6899af9a8aeb25e5627 Mon Sep 17 00:00:00 2001
+From: Michael Jeanson <mjeanson@efficios.com>
+Date: Tue, 22 Nov 2022 11:30:59 -0500
+Subject: [PATCH 19/23] Cleanup unused Makefile
+
+The syscall extractor module was moved to 'src' directory, remove the
+unused Makefile that was left over.
+
+Upstream-Status: Backport
+
+Change-Id: Id249cac6f7b87988c2e0b548c08b708f72335da6
+Signed-off-by: Michael Jeanson <mjeanson@efficios.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+---
+ .../lttng-syscalls-extractor/Makefile         | 30 -------------------
+ 1 file changed, 30 deletions(-)
+ delete mode 100644 include/instrumentation/syscalls/lttng-syscalls-extractor/Makefile
+
+diff --git a/include/instrumentation/syscalls/lttng-syscalls-extractor/Makefile b/include/instrumentation/syscalls/lttng-syscalls-extractor/Makefile
+deleted file mode 100644
+index 19305acc..00000000
+--- a/include/instrumentation/syscalls/lttng-syscalls-extractor/Makefile
++++ /dev/null
+@@ -1,30 +0,0 @@
+-# SPDX-License-Identifier: (GPL-2.0-only or LGPL-2.1-only)
+-
+-ifneq ($(KERNELRELEASE),)
+-
+-  # This part of the Makefile is used when called by the kernel build system
+-  # and defines the modules to be built.
+-
+-  obj-m += lttng-syscalls-extractor.o
+-
+-else # KERNELRELEASE
+-
+-# This part of the Makefile is used when the 'make' command is runned in the
+-# base directory of the lttng-modules sources. It sets some environment and
+-# calls the kernel build system to build the actual modules.
+-
+-KERNELDIR ?= /lib/modules/$(shell uname -r)/build
+-PWD := $(shell pwd)
+-
+-default: modules
+-
+-modules:
+-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+-
+-clean:
+-	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+-
+-%.i: %.c
+-	$(MAKE) -C $(KERNELDIR) M=$(PWD) $@
+-
+-endif # KERNELRELEASE
+-- 
+2.34.1
+

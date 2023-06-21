@@ -1,0 +1,29 @@
+From b676d4f4b51a808259fa5e5db81bae88bc8020c2 Mon Sep 17 00:00:00 2001
+From: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Date: Fri, 18 Nov 2022 10:31:32 -0500
+Subject: [PATCH 16/23] Fix: Use ifdef for CONFIG_COMPAT_OLD_SIGACTION
+
+Upstream-Status: Backport
+
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Change-Id: I7ad6e10b134b328293013ca11474cfff58dbc559
+---
+ .../syscalls/headers/x86-32-syscalls_pointers_override.h        | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h b/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h
+index 5689bda4..bd63ed09 100644
+--- a/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h
++++ b/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h
+@@ -12,7 +12,7 @@
+ # endif
+ 
+ #ifdef CONFIG_X86_64
+-#if CONFIG_COMPAT_OLD_SIGACTION
++#ifdef CONFIG_COMPAT_OLD_SIGACTION
+ /*
+  * From the point of view of the 64-bit ABI, old_sigaction
+  * becomes compat_old_sigaction.
+-- 
+2.34.1
+

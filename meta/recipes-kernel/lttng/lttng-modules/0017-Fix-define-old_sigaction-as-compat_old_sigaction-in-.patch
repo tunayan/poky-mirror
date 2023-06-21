@@ -1,0 +1,59 @@
+From 3d856d4b7b2ddce41fef70aadc2fe1d23a4def1a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?J=C3=A9r=C3=A9mie=20Galarneau?=
+ <jeremie.galarneau@efficios.com>
+Date: Tue, 13 Dec 2022 12:32:06 -0500
+Subject: [PATCH 17/23] Fix: define old_sigaction as compat_old_sigaction in
+ arm32 compat
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In a follow-up patch which updates the instrumentation for arm32, the
+instrumentation of the old_sigaction() syscall would fail to build when
+targeting a 64-bit kernel.
+
+In that context, old_sigaction becomes compat_old_sigaction which is a
+syscall that can be disabled (it was superseded by rt_sigaction a long
+time ago).
+
+Upstream-Status: Backport
+
+Signed-off-by: Jérémie Galarneau <jeremie.galarneau@efficios.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Change-Id: I3d9e155f7943cc4b768e13ebd25b671e46df9659
+---
+ .../arm-32-syscalls_pointers_override.h        | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/include/instrumentation/syscalls/headers/arm-32-syscalls_pointers_override.h b/include/instrumentation/syscalls/headers/arm-32-syscalls_pointers_override.h
+index 68ba1c4e..96fb731f 100644
+--- a/include/instrumentation/syscalls/headers/arm-32-syscalls_pointers_override.h
++++ b/include/instrumentation/syscalls/headers/arm-32-syscalls_pointers_override.h
+@@ -13,6 +13,24 @@
+ 
+ #ifndef CREATE_SYSCALL_TABLE
+ 
++#ifdef CONFIG_ARM64
++#ifdef CONFIG_COMPAT_OLD_SIGACTION
++/*
++ * From the point of view of the 64-bit ABI, old_sigaction
++ * becomes compat_old_sigaction.
++ */
++#define old_sigaction compat_old_sigaction
++#else /* CONFIG_COMPAT_OLD_SIGACTION */
++/*
++ * The target 64-bit kernel does not enable the support for
++ * the 32-bit compat version of OLD_SIGACTION. Defining
++ * OVERRIDE_32_sigaction ensures we don't build a tracepoint
++ * for this syscall.
++ */
++#define OVERRIDE_32_sigaction
++#endif /* CONFIG_COMPAT_OLD_SIGACTION */
++#endif
++
+ #define OVERRIDE_32_pipe
+ SC_LTTNG_TRACEPOINT_EVENT(pipe,
+ 	TP_PROTO(sc_exit(long ret,) int * fildes),
+-- 
+2.34.1
+

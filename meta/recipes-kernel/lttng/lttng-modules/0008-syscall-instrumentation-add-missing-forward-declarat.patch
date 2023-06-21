@@ -1,0 +1,48 @@
+From 8de0923a6ed5f1e01d02e137ab97033794b13b7b Mon Sep 17 00:00:00 2001
+From: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Date: Thu, 17 Nov 2022 13:56:17 -0500
+Subject: [PATCH 08/23] syscall instrumentation: add missing forward
+ declarations for old kernels
+
+Upstream-Status: Backport
+
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Change-Id: I70a511e83aa91ddff1976c7d6010f90eec7a9867
+---
+ src/lttng-syscalls.c | 4 ++++
+ src/lttng-syscalls.h | 4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/src/lttng-syscalls.c b/src/lttng-syscalls.c
+index 03c521a1..e10ae4cc 100644
+--- a/src/lttng-syscalls.c
++++ b/src/lttng-syscalls.c
+@@ -90,6 +90,10 @@ struct sel_arg_struct;
+ struct mmap_arg_struct;
+ struct file_handle;
+ struct user_msghdr;
++struct __kernel_old_itimerval;
++struct open_how;
++struct mount_attr;
++struct futex_waitv;
+ 
+ /*
+  * Forward declaration for kernels >= 5.6
+diff --git a/src/lttng-syscalls.h b/src/lttng-syscalls.h
+index a464e69e..c9888bd2 100644
+--- a/src/lttng-syscalls.h
++++ b/src/lttng-syscalls.h
+@@ -32,6 +32,10 @@ struct sel_arg_struct;
+ struct mmap_arg_struct;
+ struct file_handle;
+ struct user_msghdr;
++struct __kernel_old_itimerval;
++struct open_how;
++struct mount_attr;
++struct futex_waitv;
+ 
+ /*
+  * Forward declaration for kernels >= 5.6
+-- 
+2.34.1
+

@@ -1,0 +1,51 @@
+From e1da57f4bf695c473a5f4471fb11b10c78a952ad Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?J=C3=A9r=C3=A9mie=20Galarneau?=
+ <jeremie.galarneau@efficios.com>
+Date: Tue, 13 Dec 2022 12:32:30 -0500
+Subject: [PATCH 18/23] Build fix: arm64: incomplete landlock_rule_type type
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+While building the arm32 compatibility syscall instrumentation for
+arm64, the build fails because types related to `landlock` are unknown.
+
+Fixes:
+
+/root/lttng-modules/src/../include/instrumentation/syscalls/headers/arm-32-syscalls_pointers.h:1428:138: error: conversion to incomplete type
+ 1428 |  TP_FIELDS(sc_exit(ctf_integer(long, ret, ret)) sc_inout(ctf_integer(const int, ruleset_fd, ruleset_fd)) sc_inout(ctf_integer(const enum landlock_rule_type, rule
+_type, rule_type)) sc_inout(ctf_integer(const void *const, rule_attr, rule_attr)) sc_inout(ctf_integer(const __u32, flags, flags)))
+
+Upstream-Status: Backport
+
+Signed-off-by: Jérémie Galarneau <jeremie.galarneau@efficios.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Change-Id: Id898958b33ec241be792a731560f227917e35010
+---
+ src/lttng-syscalls.h | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/lttng-syscalls.h b/src/lttng-syscalls.h
+index ce63973f..a6bc30fb 100644
+--- a/src/lttng-syscalls.h
++++ b/src/lttng-syscalls.h
+@@ -21,6 +21,16 @@
+ #include <lttng/events.h>
+ #include <lttng/kernel-version.h>
+ 
++#if (LTTNG_LINUX_VERSION_CODE >= LTTNG_KERNEL_VERSION(5,13,0))
++#include <linux/landlock.h>
++#else
++struct landlock_ruleset_attr;
++
++enum landlock_rule_type {
++	LANDLOCK_RULE_PATH_BENEATH = 1,
++};
++#endif
++
+ /*
+  * Forward declarations allowing LTTng to build its system call instrumentation
+  * against old kernels which do not declare the more recent system call
+-- 
+2.34.1
+

@@ -1,0 +1,738 @@
+From c8cdb94809aeb8489a909eba40fad254aeb822f3 Mon Sep 17 00:00:00 2001
+From: Michael Jeanson <mjeanson@efficios.com>
+Date: Thu, 1 Dec 2022 13:32:33 -0500
+Subject: [PATCH 20/23] Split syscalls headers and tools
+
+Move the syscall headers tooling out of the include/ directory.
+
+Upstream-Status: Backport
+
+Change-Id: Icd507326aeac9cf28178f0e74b1d3f4812900303
+Signed-off-by: Michael Jeanson <mjeanson@efficios.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+---
+ .../{headers => }/arm-32-syscalls_integers.h  |  0
+ .../arm-32-syscalls_integers_override.h       |  0
+ .../{headers => }/arm-32-syscalls_pointers.h  |  0
+ .../arm-32-syscalls_pointers_override.h       |  0
+ .../{headers => }/arm-64-syscalls_integers.h  |  0
+ .../arm-64-syscalls_integers_override.h       |  0
+ .../{headers => }/arm-64-syscalls_pointers.h  |  0
+ .../arm-64-syscalls_pointers_override.h       |  0
+ .../{headers => }/compat_syscalls_integers.h  |  0
+ .../{headers => }/compat_syscalls_pointers.h  |  0
+ .../{headers => }/mips-32-syscalls_integers.h |  0
+ .../mips-32-syscalls_integers_override.h      |  0
+ .../{headers => }/mips-32-syscalls_pointers.h |  0
+ .../mips-32-syscalls_pointers_override.h      |  0
+ .../{headers => }/mips-64-syscalls_integers.h |  0
+ .../mips-64-syscalls_integers_override.h      |  0
+ .../{headers => }/mips-64-syscalls_pointers.h |  0
+ .../mips-64-syscalls_pointers_override.h      |  0
+ .../powerpc-32-syscalls_integers.h            |  0
+ .../powerpc-32-syscalls_integers_override.h   |  0
+ .../powerpc-32-syscalls_pointers.h            |  0
+ .../powerpc-32-syscalls_pointers_override.h   |  0
+ .../{headers => }/syscalls_integers.h         |  0
+ .../syscalls_integers_override.h              |  0
+ .../{headers => }/syscalls_pointers.h         |  0
+ .../syscalls_pointers_override.h              |  0
+ .../syscalls/{headers => }/syscalls_unknown.h |  0
+ .../{headers => }/x86-32-syscalls_integers.h  |  0
+ .../x86-32-syscalls_integers_override.h       |  0
+ .../{headers => }/x86-32-syscalls_pointers.h  |  0
+ .../x86-32-syscalls_pointers_override.h       |  0
+ .../{headers => }/x86-64-syscalls_integers.h  |  0
+ .../x86-64-syscalls_integers_override.h       |  0
+ .../{headers => }/x86-64-syscalls_pointers.h  |  0
+ .../x86-64-syscalls_pointers_override.h       |  0
+ src/lttng-syscalls-entry-compat-table.c       | 10 +++++-----
+ src/lttng-syscalls-entry-table.c              | 10 +++++-----
+ src/lttng-syscalls-enum.c                     |  6 +++---
+ src/lttng-syscalls-exit-compat-table.c        | 10 +++++-----
+ src/lttng-syscalls-exit-table.c               | 10 +++++-----
+ src/lttng-syscalls.c                          |  4 ++--
+ .../syscalls/3.0.34/powerpc-32-syscalls       |  0
+ .../syscalls/3.1.0-rc6/x86-32-syscalls        |  0
+ .../syscalls/3.10.0-rc7/x86-64-syscalls       |  0
+ .../syscalls/3.13.0/mips-32-syscalls          |  0
+ .../syscalls/3.18.0/mips-32-syscalls          |  0
+ .../syscalls/3.4.25/arm-32-syscalls           |  0
+ .../syscalls/3.5.0/mips-32-syscalls           |  0
+ .../syscalls/3.5.0/mips-64-syscalls           |  0
+ .../syscalls/4.4.0/arm-64-syscalls            |  0
+ .../syscalls/6.0.7/arm-32-syscalls            |  0
+ .../syscalls/6.0.7/arm-64-syscalls            |  0
+ .../syscalls/6.0.7/x86-32-syscalls            |  0
+ .../syscalls/6.0.7/x86-64-syscalls            |  0
+ .../instrumentation => tools}/syscalls/README | 16 +++++++--------
+ .../syscalls/lttng-get-syscall-inout.sh       | 18 ++++++++---------
+ .../syscalls/lttng-syscalls-extract.sh        | 15 ++++++++------
+ .../linux-link-trace-syscalls-as-data.patch   |  0
+ .../lttng-syscalls-generate-headers.sh        | 20 +++++++++++++------
+ .../table-syscall-inout-x86-32-override.txt   |  0
+ .../syscalls/table-syscall-inout.txt          |  0
+ 61 files changed, 65 insertions(+), 54 deletions(-)
+ rename include/instrumentation/syscalls/{headers => }/arm-32-syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/arm-32-syscalls_integers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/arm-32-syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/arm-32-syscalls_pointers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/arm-64-syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/arm-64-syscalls_integers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/arm-64-syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/arm-64-syscalls_pointers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/compat_syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/compat_syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/mips-32-syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/mips-32-syscalls_integers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/mips-32-syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/mips-32-syscalls_pointers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/mips-64-syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/mips-64-syscalls_integers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/mips-64-syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/mips-64-syscalls_pointers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/powerpc-32-syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/powerpc-32-syscalls_integers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/powerpc-32-syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/powerpc-32-syscalls_pointers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/syscalls_integers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/syscalls_pointers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/syscalls_unknown.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/x86-32-syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/x86-32-syscalls_integers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/x86-32-syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/x86-32-syscalls_pointers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/x86-64-syscalls_integers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/x86-64-syscalls_integers_override.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/x86-64-syscalls_pointers.h (100%)
+ rename include/instrumentation/syscalls/{headers => }/x86-64-syscalls_pointers_override.h (100%)
+ rename {include/instrumentation => tools}/syscalls/3.0.34/powerpc-32-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/3.1.0-rc6/x86-32-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/3.10.0-rc7/x86-64-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/3.13.0/mips-32-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/3.18.0/mips-32-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/3.4.25/arm-32-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/3.5.0/mips-32-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/3.5.0/mips-64-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/4.4.0/arm-64-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/6.0.7/arm-32-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/6.0.7/arm-64-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/6.0.7/x86-32-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/6.0.7/x86-64-syscalls (100%)
+ rename {include/instrumentation => tools}/syscalls/README (69%)
+ rename {include/instrumentation => tools}/syscalls/lttng-get-syscall-inout.sh (85%)
+ rename {include/instrumentation => tools}/syscalls/lttng-syscalls-extract.sh (80%)
+ rename {include/instrumentation => tools}/syscalls/lttng-syscalls-extractor/linux-link-trace-syscalls-as-data.patch (100%)
+ rename {include/instrumentation => tools}/syscalls/lttng-syscalls-generate-headers.sh (96%)
+ rename {include/instrumentation => tools}/syscalls/table-syscall-inout-x86-32-override.txt (100%)
+ rename {include/instrumentation => tools}/syscalls/table-syscall-inout.txt (100%)
+
+diff --git a/include/instrumentation/syscalls/headers/arm-32-syscalls_integers.h b/include/instrumentation/syscalls/arm-32-syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/arm-32-syscalls_integers.h
+rename to include/instrumentation/syscalls/arm-32-syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/arm-32-syscalls_integers_override.h b/include/instrumentation/syscalls/arm-32-syscalls_integers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/arm-32-syscalls_integers_override.h
+rename to include/instrumentation/syscalls/arm-32-syscalls_integers_override.h
+diff --git a/include/instrumentation/syscalls/headers/arm-32-syscalls_pointers.h b/include/instrumentation/syscalls/arm-32-syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/arm-32-syscalls_pointers.h
+rename to include/instrumentation/syscalls/arm-32-syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/arm-32-syscalls_pointers_override.h b/include/instrumentation/syscalls/arm-32-syscalls_pointers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/arm-32-syscalls_pointers_override.h
+rename to include/instrumentation/syscalls/arm-32-syscalls_pointers_override.h
+diff --git a/include/instrumentation/syscalls/headers/arm-64-syscalls_integers.h b/include/instrumentation/syscalls/arm-64-syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/arm-64-syscalls_integers.h
+rename to include/instrumentation/syscalls/arm-64-syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/arm-64-syscalls_integers_override.h b/include/instrumentation/syscalls/arm-64-syscalls_integers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/arm-64-syscalls_integers_override.h
+rename to include/instrumentation/syscalls/arm-64-syscalls_integers_override.h
+diff --git a/include/instrumentation/syscalls/headers/arm-64-syscalls_pointers.h b/include/instrumentation/syscalls/arm-64-syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/arm-64-syscalls_pointers.h
+rename to include/instrumentation/syscalls/arm-64-syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/arm-64-syscalls_pointers_override.h b/include/instrumentation/syscalls/arm-64-syscalls_pointers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/arm-64-syscalls_pointers_override.h
+rename to include/instrumentation/syscalls/arm-64-syscalls_pointers_override.h
+diff --git a/include/instrumentation/syscalls/headers/compat_syscalls_integers.h b/include/instrumentation/syscalls/compat_syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/compat_syscalls_integers.h
+rename to include/instrumentation/syscalls/compat_syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/compat_syscalls_pointers.h b/include/instrumentation/syscalls/compat_syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/compat_syscalls_pointers.h
+rename to include/instrumentation/syscalls/compat_syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/mips-32-syscalls_integers.h b/include/instrumentation/syscalls/mips-32-syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/mips-32-syscalls_integers.h
+rename to include/instrumentation/syscalls/mips-32-syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/mips-32-syscalls_integers_override.h b/include/instrumentation/syscalls/mips-32-syscalls_integers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/mips-32-syscalls_integers_override.h
+rename to include/instrumentation/syscalls/mips-32-syscalls_integers_override.h
+diff --git a/include/instrumentation/syscalls/headers/mips-32-syscalls_pointers.h b/include/instrumentation/syscalls/mips-32-syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/mips-32-syscalls_pointers.h
+rename to include/instrumentation/syscalls/mips-32-syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/mips-32-syscalls_pointers_override.h b/include/instrumentation/syscalls/mips-32-syscalls_pointers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/mips-32-syscalls_pointers_override.h
+rename to include/instrumentation/syscalls/mips-32-syscalls_pointers_override.h
+diff --git a/include/instrumentation/syscalls/headers/mips-64-syscalls_integers.h b/include/instrumentation/syscalls/mips-64-syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/mips-64-syscalls_integers.h
+rename to include/instrumentation/syscalls/mips-64-syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/mips-64-syscalls_integers_override.h b/include/instrumentation/syscalls/mips-64-syscalls_integers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/mips-64-syscalls_integers_override.h
+rename to include/instrumentation/syscalls/mips-64-syscalls_integers_override.h
+diff --git a/include/instrumentation/syscalls/headers/mips-64-syscalls_pointers.h b/include/instrumentation/syscalls/mips-64-syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/mips-64-syscalls_pointers.h
+rename to include/instrumentation/syscalls/mips-64-syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/mips-64-syscalls_pointers_override.h b/include/instrumentation/syscalls/mips-64-syscalls_pointers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/mips-64-syscalls_pointers_override.h
+rename to include/instrumentation/syscalls/mips-64-syscalls_pointers_override.h
+diff --git a/include/instrumentation/syscalls/headers/powerpc-32-syscalls_integers.h b/include/instrumentation/syscalls/powerpc-32-syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/powerpc-32-syscalls_integers.h
+rename to include/instrumentation/syscalls/powerpc-32-syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/powerpc-32-syscalls_integers_override.h b/include/instrumentation/syscalls/powerpc-32-syscalls_integers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/powerpc-32-syscalls_integers_override.h
+rename to include/instrumentation/syscalls/powerpc-32-syscalls_integers_override.h
+diff --git a/include/instrumentation/syscalls/headers/powerpc-32-syscalls_pointers.h b/include/instrumentation/syscalls/powerpc-32-syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/powerpc-32-syscalls_pointers.h
+rename to include/instrumentation/syscalls/powerpc-32-syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/powerpc-32-syscalls_pointers_override.h b/include/instrumentation/syscalls/powerpc-32-syscalls_pointers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/powerpc-32-syscalls_pointers_override.h
+rename to include/instrumentation/syscalls/powerpc-32-syscalls_pointers_override.h
+diff --git a/include/instrumentation/syscalls/headers/syscalls_integers.h b/include/instrumentation/syscalls/syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/syscalls_integers.h
+rename to include/instrumentation/syscalls/syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/syscalls_integers_override.h b/include/instrumentation/syscalls/syscalls_integers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/syscalls_integers_override.h
+rename to include/instrumentation/syscalls/syscalls_integers_override.h
+diff --git a/include/instrumentation/syscalls/headers/syscalls_pointers.h b/include/instrumentation/syscalls/syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/syscalls_pointers.h
+rename to include/instrumentation/syscalls/syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/syscalls_pointers_override.h b/include/instrumentation/syscalls/syscalls_pointers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/syscalls_pointers_override.h
+rename to include/instrumentation/syscalls/syscalls_pointers_override.h
+diff --git a/include/instrumentation/syscalls/headers/syscalls_unknown.h b/include/instrumentation/syscalls/syscalls_unknown.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/syscalls_unknown.h
+rename to include/instrumentation/syscalls/syscalls_unknown.h
+diff --git a/include/instrumentation/syscalls/headers/x86-32-syscalls_integers.h b/include/instrumentation/syscalls/x86-32-syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/x86-32-syscalls_integers.h
+rename to include/instrumentation/syscalls/x86-32-syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/x86-32-syscalls_integers_override.h b/include/instrumentation/syscalls/x86-32-syscalls_integers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/x86-32-syscalls_integers_override.h
+rename to include/instrumentation/syscalls/x86-32-syscalls_integers_override.h
+diff --git a/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers.h b/include/instrumentation/syscalls/x86-32-syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/x86-32-syscalls_pointers.h
+rename to include/instrumentation/syscalls/x86-32-syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h b/include/instrumentation/syscalls/x86-32-syscalls_pointers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/x86-32-syscalls_pointers_override.h
+rename to include/instrumentation/syscalls/x86-32-syscalls_pointers_override.h
+diff --git a/include/instrumentation/syscalls/headers/x86-64-syscalls_integers.h b/include/instrumentation/syscalls/x86-64-syscalls_integers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/x86-64-syscalls_integers.h
+rename to include/instrumentation/syscalls/x86-64-syscalls_integers.h
+diff --git a/include/instrumentation/syscalls/headers/x86-64-syscalls_integers_override.h b/include/instrumentation/syscalls/x86-64-syscalls_integers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/x86-64-syscalls_integers_override.h
+rename to include/instrumentation/syscalls/x86-64-syscalls_integers_override.h
+diff --git a/include/instrumentation/syscalls/headers/x86-64-syscalls_pointers.h b/include/instrumentation/syscalls/x86-64-syscalls_pointers.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/x86-64-syscalls_pointers.h
+rename to include/instrumentation/syscalls/x86-64-syscalls_pointers.h
+diff --git a/include/instrumentation/syscalls/headers/x86-64-syscalls_pointers_override.h b/include/instrumentation/syscalls/x86-64-syscalls_pointers_override.h
+similarity index 100%
+rename from include/instrumentation/syscalls/headers/x86-64-syscalls_pointers_override.h
+rename to include/instrumentation/syscalls/x86-64-syscalls_pointers_override.h
+diff --git a/src/lttng-syscalls-entry-compat-table.c b/src/lttng-syscalls-entry-compat-table.c
+index 2c2902bd..4eb8940d 100644
+--- a/src/lttng-syscalls-entry-compat-table.c
++++ b/src/lttng-syscalls-entry-compat-table.c
+@@ -25,7 +25,7 @@
+ #define LTTNG_PACKAGE_BUILD
+ #define CREATE_TRACE_POINTS
+ #define TP_MODULE_NOINIT
+-#define TRACE_INCLUDE_PATH instrumentation/syscalls/headers
++#define TRACE_INCLUDE_PATH instrumentation/syscalls
+ 
+ #define PARAMS(args...)	args
+ 
+@@ -65,12 +65,12 @@
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM compat_syscall_entry_integers
+ #define TRACE_INCLUDE_FILE compat_syscalls_integers
+-#include <instrumentation/syscalls/headers/syscalls_integers.h>
++#include <instrumentation/syscalls/syscalls_integers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM compat_syscall_entry_pointers
+ #define TRACE_INCLUDE_FILE compat_syscalls_pointers
+-#include <instrumentation/syscalls/headers/syscalls_pointers.h>
++#include <instrumentation/syscalls/syscalls_pointers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #undef SC_LTTNG_TRACEPOINT_ENUM
+@@ -100,8 +100,8 @@
+ 
+ /* Event compat syscall enter table */
+ const struct trace_syscall_entry _compat_sc_table[] = {
+-#include <instrumentation/syscalls/headers/compat_syscalls_integers.h>
+-#include <instrumentation/syscalls/headers/compat_syscalls_pointers.h>
++#include <instrumentation/syscalls/compat_syscalls_integers.h>
++#include <instrumentation/syscalls/compat_syscalls_pointers.h>
+ };
+ 
+ const struct trace_syscall_table compat_sc_table = {
+diff --git a/src/lttng-syscalls-entry-table.c b/src/lttng-syscalls-entry-table.c
+index 7324f487..a9cfe576 100644
+--- a/src/lttng-syscalls-entry-table.c
++++ b/src/lttng-syscalls-entry-table.c
+@@ -25,7 +25,7 @@
+ #define LTTNG_PACKAGE_BUILD
+ #define CREATE_TRACE_POINTS
+ #define TP_MODULE_NOINIT
+-#define TRACE_INCLUDE_PATH instrumentation/syscalls/headers
++#define TRACE_INCLUDE_PATH instrumentation/syscalls
+ 
+ #define PARAMS(args...)	args
+ 
+@@ -64,12 +64,12 @@
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM syscall_entry_integers
+ #define TRACE_INCLUDE_FILE syscalls_integers
+-#include <instrumentation/syscalls/headers/syscalls_integers.h>
++#include <instrumentation/syscalls/syscalls_integers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM syscall_entry_pointers
+ #define TRACE_INCLUDE_FILE syscalls_pointers
+-#include <instrumentation/syscalls/headers/syscalls_pointers.h>
++#include <instrumentation/syscalls/syscalls_pointers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #undef SC_LTTNG_TRACEPOINT_ENUM
+@@ -97,8 +97,8 @@
+ 
+ /* Event syscall enter tracing table */
+ static const struct trace_syscall_entry _sc_table[] = {
+-#include <instrumentation/syscalls/headers/syscalls_integers.h>
+-#include <instrumentation/syscalls/headers/syscalls_pointers.h>
++#include <instrumentation/syscalls/syscalls_integers.h>
++#include <instrumentation/syscalls/syscalls_pointers.h>
+ };
+ 
+ const struct trace_syscall_table sc_table = {
+diff --git a/src/lttng-syscalls-enum.c b/src/lttng-syscalls-enum.c
+index b82dbfd1..8ce87f95 100644
+--- a/src/lttng-syscalls-enum.c
++++ b/src/lttng-syscalls-enum.c
+@@ -15,7 +15,7 @@
+ #define LTTNG_PACKAGE_BUILD
+ #define CREATE_TRACE_POINTS
+ #define TP_MODULE_NOINIT
+-#define TRACE_INCLUDE_PATH instrumentation/syscalls/headers
++#define TRACE_INCLUDE_PATH instrumentation/syscalls
+ 
+ #define PARAMS(args...)	args
+ 
+@@ -42,12 +42,12 @@
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM syscall_entry_integers
+ #define TRACE_INCLUDE_FILE syscalls_integers
+-#include <instrumentation/syscalls/headers/syscalls_integers.h>
++#include <instrumentation/syscalls/syscalls_integers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM syscall_entry_pointers
+ #define TRACE_INCLUDE_FILE syscalls_pointers
+-#include <instrumentation/syscalls/headers/syscalls_pointers.h>
++#include <instrumentation/syscalls/syscalls_pointers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #undef SC_LTTNG_TRACEPOINT_ENUM
+diff --git a/src/lttng-syscalls-exit-compat-table.c b/src/lttng-syscalls-exit-compat-table.c
+index 2ba0c016..013438ad 100644
+--- a/src/lttng-syscalls-exit-compat-table.c
++++ b/src/lttng-syscalls-exit-compat-table.c
+@@ -25,7 +25,7 @@
+ #define LTTNG_PACKAGE_BUILD
+ #define CREATE_TRACE_POINTS
+ #define TP_MODULE_NOINIT
+-#define TRACE_INCLUDE_PATH instrumentation/syscalls/headers
++#define TRACE_INCLUDE_PATH instrumentation/syscalls
+ 
+ #define PARAMS(args...)	args
+ 
+@@ -65,12 +65,12 @@
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM compat_syscall_exit_integers
+ #define TRACE_INCLUDE_FILE compat_syscalls_integers
+-#include <instrumentation/syscalls/headers/syscalls_integers.h>
++#include <instrumentation/syscalls/syscalls_integers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM compat_syscall_exit_pointers
+ #define TRACE_INCLUDE_FILE compat_syscalls_pointers
+-#include <instrumentation/syscalls/headers/syscalls_pointers.h>
++#include <instrumentation/syscalls/syscalls_pointers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #undef SC_LTTNG_TRACEPOINT_ENUM
+@@ -99,8 +99,8 @@
+ 
+ /* Event compat syscall exit table */
+ const struct trace_syscall_entry _compat_sc_exit_table[] = {
+-#include <instrumentation/syscalls/headers/compat_syscalls_integers.h>
+-#include <instrumentation/syscalls/headers/compat_syscalls_pointers.h>
++#include <instrumentation/syscalls/compat_syscalls_integers.h>
++#include <instrumentation/syscalls/compat_syscalls_pointers.h>
+ };
+ 
+ const struct trace_syscall_table compat_sc_exit_table = {
+diff --git a/src/lttng-syscalls-exit-table.c b/src/lttng-syscalls-exit-table.c
+index 8e49b425..767c6e26 100644
+--- a/src/lttng-syscalls-exit-table.c
++++ b/src/lttng-syscalls-exit-table.c
+@@ -25,7 +25,7 @@
+ #define LTTNG_PACKAGE_BUILD
+ #define CREATE_TRACE_POINTS
+ #define TP_MODULE_NOINIT
+-#define TRACE_INCLUDE_PATH instrumentation/syscalls/headers
++#define TRACE_INCLUDE_PATH instrumentation/syscalls
+ 
+ #define PARAMS(args...)	args
+ 
+@@ -64,12 +64,12 @@
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM syscall_exit_integers
+ #define TRACE_INCLUDE_FILE syscalls_integers
+-#include <instrumentation/syscalls/headers/syscalls_integers.h>
++#include <instrumentation/syscalls/syscalls_integers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM syscall_exit_pointers
+ #define TRACE_INCLUDE_FILE syscalls_pointers
+-#include <instrumentation/syscalls/headers/syscalls_pointers.h>
++#include <instrumentation/syscalls/syscalls_pointers.h>
+ #undef TRACE_INCLUDE_FILE
+ #undef TRACE_SYSTEM
+ #undef SC_LTTNG_TRACEPOINT_ENUM
+@@ -97,8 +97,8 @@
+ 
+ /* Event syscall enter tracing table */
+ static const struct trace_syscall_entry _sc_exit_table[] = {
+-#include <instrumentation/syscalls/headers/syscalls_integers.h>
+-#include <instrumentation/syscalls/headers/syscalls_pointers.h>
++#include <instrumentation/syscalls/syscalls_integers.h>
++#include <instrumentation/syscalls/syscalls_pointers.h>
+ };
+ 
+ const struct trace_syscall_table sc_exit_table = {
+diff --git a/src/lttng-syscalls.c b/src/lttng-syscalls.c
+index e10ae4cc..2ff91048 100644
+--- a/src/lttng-syscalls.c
++++ b/src/lttng-syscalls.c
+@@ -119,14 +119,14 @@ typedef __kernel_old_time_t time_t;
+ #define LTTNG_PACKAGE_BUILD
+ #define CREATE_TRACE_POINTS
+ #define TP_MODULE_NOINIT
+-#define TRACE_INCLUDE_PATH instrumentation/syscalls/headers
++#define TRACE_INCLUDE_PATH instrumentation/syscalls
+ 
+ #define PARAMS(args...)	args
+ 
+ /* Handle unknown syscalls */
+ #undef TRACE_SYSTEM
+ #define TRACE_SYSTEM syscalls_unknown
+-#include <instrumentation/syscalls/headers/syscalls_unknown.h>
++#include <instrumentation/syscalls/syscalls_unknown.h>
+ #undef TRACE_SYSTEM
+ 
+ #undef TP_PROBE_CB
+diff --git a/include/instrumentation/syscalls/3.0.34/powerpc-32-syscalls b/tools/syscalls/3.0.34/powerpc-32-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/3.0.34/powerpc-32-syscalls
+rename to tools/syscalls/3.0.34/powerpc-32-syscalls
+diff --git a/include/instrumentation/syscalls/3.1.0-rc6/x86-32-syscalls b/tools/syscalls/3.1.0-rc6/x86-32-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/3.1.0-rc6/x86-32-syscalls
+rename to tools/syscalls/3.1.0-rc6/x86-32-syscalls
+diff --git a/include/instrumentation/syscalls/3.10.0-rc7/x86-64-syscalls b/tools/syscalls/3.10.0-rc7/x86-64-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/3.10.0-rc7/x86-64-syscalls
+rename to tools/syscalls/3.10.0-rc7/x86-64-syscalls
+diff --git a/include/instrumentation/syscalls/3.13.0/mips-32-syscalls b/tools/syscalls/3.13.0/mips-32-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/3.13.0/mips-32-syscalls
+rename to tools/syscalls/3.13.0/mips-32-syscalls
+diff --git a/include/instrumentation/syscalls/3.18.0/mips-32-syscalls b/tools/syscalls/3.18.0/mips-32-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/3.18.0/mips-32-syscalls
+rename to tools/syscalls/3.18.0/mips-32-syscalls
+diff --git a/include/instrumentation/syscalls/3.4.25/arm-32-syscalls b/tools/syscalls/3.4.25/arm-32-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/3.4.25/arm-32-syscalls
+rename to tools/syscalls/3.4.25/arm-32-syscalls
+diff --git a/include/instrumentation/syscalls/3.5.0/mips-32-syscalls b/tools/syscalls/3.5.0/mips-32-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/3.5.0/mips-32-syscalls
+rename to tools/syscalls/3.5.0/mips-32-syscalls
+diff --git a/include/instrumentation/syscalls/3.5.0/mips-64-syscalls b/tools/syscalls/3.5.0/mips-64-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/3.5.0/mips-64-syscalls
+rename to tools/syscalls/3.5.0/mips-64-syscalls
+diff --git a/include/instrumentation/syscalls/4.4.0/arm-64-syscalls b/tools/syscalls/4.4.0/arm-64-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/4.4.0/arm-64-syscalls
+rename to tools/syscalls/4.4.0/arm-64-syscalls
+diff --git a/include/instrumentation/syscalls/6.0.7/arm-32-syscalls b/tools/syscalls/6.0.7/arm-32-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/6.0.7/arm-32-syscalls
+rename to tools/syscalls/6.0.7/arm-32-syscalls
+diff --git a/include/instrumentation/syscalls/6.0.7/arm-64-syscalls b/tools/syscalls/6.0.7/arm-64-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/6.0.7/arm-64-syscalls
+rename to tools/syscalls/6.0.7/arm-64-syscalls
+diff --git a/include/instrumentation/syscalls/6.0.7/x86-32-syscalls b/tools/syscalls/6.0.7/x86-32-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/6.0.7/x86-32-syscalls
+rename to tools/syscalls/6.0.7/x86-32-syscalls
+diff --git a/include/instrumentation/syscalls/6.0.7/x86-64-syscalls b/tools/syscalls/6.0.7/x86-64-syscalls
+similarity index 100%
+rename from include/instrumentation/syscalls/6.0.7/x86-64-syscalls
+rename to tools/syscalls/6.0.7/x86-64-syscalls
+diff --git a/include/instrumentation/syscalls/README b/tools/syscalls/README
+similarity index 69%
+rename from include/instrumentation/syscalls/README
+rename to tools/syscalls/README
+index 6dbc640e..a51531b3 100644
+--- a/include/instrumentation/syscalls/README
++++ b/tools/syscalls/README
+@@ -10,9 +10,9 @@ is expected). See the dmesg output for system call metadata.
+ 
+ 2) Generate system call TRACE_EVENT().
+ 
+-Take the dmesg data and feed it to lttng-syscalls-generate-headers.sh from
+-the instrumentation/syscalls directory. See the script header for usage
+-example. It should be run for both the integers and pointers types.
++Take the dmesg data and feed it to lttng-syscalls-generate-headers.sh from the
++tools/syscalls directory. See the script header for usage example. It should be
++run for both the integers and pointers types.
+ 
+ After these are created, you just need to follow the new system call additions,
+ no need to regenerate the whole thing, since system calls are only appended to.
+@@ -26,8 +26,8 @@ generate the correct typing for specific system calls.
+ 
+ 4) Integrating the new architecture, updating architecture header
+ 
+-Edit instrumentation/syscalls/headers/syscalls_integers.h and
+-syscalls_pointers.h. Add the new architecture
+-(e.g. CONFIG_X86_64) to the newly-generated headers
+-(e.g. changing the current x86-64-syscalls-3.10.0-rc7_<CLASS>.h into
+-x86-64-syscalls-3.13.7_<CLASS>.h), then rebuild lttng-modules.
++Edit instrumentation/syscalls/syscalls_integers.h and
++instrumentation/syscalls/syscalls_pointers.h. Add the new architecture (e.g.
++CONFIG_X86_64) to the newly-generated headers (e.g. changing the current
++x86-64-syscalls_<CLASS>.h into x86-64-syscalls_<CLASS>.h), then rebuild
++lttng-modules.
+diff --git a/include/instrumentation/syscalls/lttng-get-syscall-inout.sh b/tools/syscalls/lttng-get-syscall-inout.sh
+similarity index 85%
+rename from include/instrumentation/syscalls/lttng-get-syscall-inout.sh
+rename to tools/syscalls/lttng-get-syscall-inout.sh
+index 61bd86a4..413eebfa 100755
+--- a/include/instrumentation/syscalls/lttng-get-syscall-inout.sh
++++ b/tools/syscalls/lttng-get-syscall-inout.sh
+@@ -13,17 +13,17 @@ GENERIC_INOUT_DESCRIPTION_FILE="$(dirname "$0")/table-syscall-inout.txt"
+ # Delete temp file on exit
+ trap 'rm -f "$TMPFILE"' EXIT
+ 
+-if [ x"${GENERIC_INOUT_DESCRIPTION_FILE}" = x"" ]; then
++if [ "${GENERIC_INOUT_DESCRIPTION_FILE}" = "" ]; then
+ 	echo "Error: Please specify input file name as first argument" >&2
+ 	exit 1
+ fi
+ 
+-if [ x"${SYSCALL_NAME}" = x"" ]; then
++if [ "${SYSCALL_NAME}" = "" ]; then
+ 	echo "Error: Please specify system call name as second argument" >&2
+ 	exit 1
+ fi
+ 
+-if [[ x"${ARG_NR}" = x"" || ${ARG_NR} == 0 ]]; then
++if [[ "${ARG_NR}" = "" || ${ARG_NR} == 0 ]]; then
+ 	echo "Error: Please specify argument number larger than 0 as third argument" >&2
+ 	exit 1
+ fi
+@@ -39,21 +39,21 @@ function write_inout_description ()
+ 	local syscall_name=$2
+ 	local output_file=$3
+ 	local description_files=("$(dirname "$0")/table-syscall-inout-${arch_name}-override.txt" "$GENERIC_INOUT_DESCRIPTION_FILE")
+-	local found=0
++	local match_count
+ 
+-	for file in ${description_files[@]}; do
++	for file in "${description_files[@]}"; do
+ 		if [ ! -f "$file" ]; then
+ 			continue
+ 		fi
+ 
+ 		# Look for the syscall's in/out description
+-		grep "syscall ${syscall_name} " "${file}" > "${output_file}" || true
++		grep "^syscall ${syscall_name} " "${file}" > "${output_file}" || true
+ 
+ 		# Error out if we got more than one syscall
+-		local match_count=$(wc -l < "${output_file}")
++		match_count=$(wc -l < "${output_file}")
+ 		if [ "${match_count}" -gt 1 ]; then
+ 			# Fatal error; invalid description file
+-			echo "Error: more than one system call match" >&2
++			echo "Error: more than one system call match for ${SYSCALL_NAME}" >&2
+ 			exit 1
+ 		elif [ "${match_count}" -eq 1 ]; then
+ 			# Description found
+@@ -80,7 +80,7 @@ fi
+ SC_ARGS=$(sed 's/^syscall \([^ ]*\) nbargs \([^ ]*\) .*/\2/g' "${TMPFILE}")
+ 
+ if [ "${ARG_NR}" -gt "${SC_ARGS}" ]; then
+-	echo "Error: argument number (${ARG_NR}) is larger than number of syscall arguments (${SC_ARGS})" >&2
++	echo "Error: argument number (${ARG_NR}) for ${SYSCALL_NAME} is larger than number of syscall arguments (${SC_ARGS})" >&2
+ 	exit 1
+ fi
+ 
+diff --git a/include/instrumentation/syscalls/lttng-syscalls-extract.sh b/tools/syscalls/lttng-syscalls-extract.sh
+similarity index 80%
+rename from include/instrumentation/syscalls/lttng-syscalls-extract.sh
+rename to tools/syscalls/lttng-syscalls-extract.sh
+index d68baa96..d2dbfcfe 100755
+--- a/include/instrumentation/syscalls/lttng-syscalls-extract.sh
++++ b/tools/syscalls/lttng-syscalls-extract.sh
+@@ -5,19 +5,22 @@ set -eu
+ 
+ outfile="${1:-}"
+ 
+-if [ "x$outfile" = "x" ]; then
++if [ "$outfile" = "" ]; then
+ 	echo "Specify an output file as first argument, it will be overwritten."
+ 	exit 1
+ fi
+ 
+-cd lttng-syscalls-extractor || exit 1
+-make
+-cd - || exit 1
+-
+ # Generate a random string to use as an identifier
+ ident=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n1)
+ 
+-sudo insmod ./lttng-syscalls-extractor/lttng-syscalls-extractor.ko ident="$ident" || true
++cd ../.. || exit 1
++make syscalls_extractor
++
++sudo insmod ./src/lttng-wrapper.ko
++sudo insmod ./src/lttng-syscalls-extractor.ko ident="$ident" || true
++sudo rmmod lttng-wrapper
++
++cd - || exit 1
+ 
+ sudo dmesg | sed -n -e 's/\(\[.*\] \)\?'"$ident"'//p' > "$outfile"
+ 
+diff --git a/include/instrumentation/syscalls/lttng-syscalls-extractor/linux-link-trace-syscalls-as-data.patch b/tools/syscalls/lttng-syscalls-extractor/linux-link-trace-syscalls-as-data.patch
+similarity index 100%
+rename from include/instrumentation/syscalls/lttng-syscalls-extractor/linux-link-trace-syscalls-as-data.patch
+rename to tools/syscalls/lttng-syscalls-extractor/linux-link-trace-syscalls-as-data.patch
+diff --git a/include/instrumentation/syscalls/lttng-syscalls-generate-headers.sh b/tools/syscalls/lttng-syscalls-generate-headers.sh
+similarity index 96%
+rename from include/instrumentation/syscalls/lttng-syscalls-generate-headers.sh
+rename to tools/syscalls/lttng-syscalls-generate-headers.sh
+index b93bf7c7..1ec138c7 100755
+--- a/include/instrumentation/syscalls/lttng-syscalls-generate-headers.sh
++++ b/tools/syscalls/lttng-syscalls-generate-headers.sh
+@@ -15,32 +15,39 @@ VERSIONDIR=$2
+ INPUTFILE=$3
+ ARCH_NAME=$4
+ BITNESS=$5
+-INPUT=${VERSIONDIR}/${INPUTFILE}
+-HEADER=headers/${INPUTFILE}_${CLASS}.h
++OUTPUTDIR=$6
+ 
+-if [ x"$VERSIONDIR" = x"" ]; then
++if [ "$VERSIONDIR" = "" ]; then
+ 	echo "Error: Please specify input directory as second argument" >&2
+ 	exit 1
+ fi
+ 
+-if [ x"$INPUTFILE" = x"" ]; then
++if [ "$INPUTFILE" = "" ]; then
+ 	echo "Error: Please specify input file as third argument" >&2
+ 	exit 1
+ fi
+ 
+-if [ x"$BITNESS" != x"32" ] && [ x"$BITNESS" != x"64" ]; then
++if [ "$BITNESS" != "32" ] && [ "$BITNESS" != "64" ]; then
+ 	echo "Error: Please specify bitness as fourth argument (\"32\" or \"64\")" >&2
+ 	exit 1
+ fi
+ 
+-if [ x"$ARCH_NAME" = x"" ]; then
++if [ "$ARCH_NAME" = "" ]; then
+ 	echo "Error: Please specify the architecture name as fourth argument" >&2
+ 	exit 1
+ fi
+ 
++if [ "$OUTPUTDIR" = "" ]; then
++	echo "Error: Please specify output directory as fifth argument" >&2
++	exit 1
++fi
++
+ # Abort on error and undefined variable
+ set -eu
+ 
++INPUT=${VERSIONDIR}/${INPUTFILE}
++HEADER="${OUTPUTDIR}/${INPUTFILE}_${CLASS}.h"
++
+ # Create temp files
+ SRCFILE=$(mktemp)
+ TMPFILE=$(mktemp)
+@@ -77,6 +84,7 @@ fi
+ 
+ 
+ echo "/* SPDX-License-Identifier: (GPL-2.0-only or LGPL-2.1-only) */
++/* SPDX-FileCopyrightText: $(date +%Y) EfficiOS Inc. */
+ 
+ /* THIS FILE IS AUTO-GENERATED. DO NOT EDIT */
+ 
+diff --git a/include/instrumentation/syscalls/table-syscall-inout-x86-32-override.txt b/tools/syscalls/table-syscall-inout-x86-32-override.txt
+similarity index 100%
+rename from include/instrumentation/syscalls/table-syscall-inout-x86-32-override.txt
+rename to tools/syscalls/table-syscall-inout-x86-32-override.txt
+diff --git a/include/instrumentation/syscalls/table-syscall-inout.txt b/tools/syscalls/table-syscall-inout.txt
+similarity index 100%
+rename from include/instrumentation/syscalls/table-syscall-inout.txt
+rename to tools/syscalls/table-syscall-inout.txt
+-- 
+2.34.1
+

@@ -1,0 +1,42 @@
+From a98cb9d4b33084e37cb169005d678f8cdf6c634b Mon Sep 17 00:00:00 2001
+From: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Date: Fri, 18 Nov 2022 10:01:53 -0500
+Subject: [PATCH 15/23] Fix: system call instrumentation build failure on
+ v3.0-v3.10 RT kernel
+
+Upstream-Status: Backport
+
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Change-Id: I3f6f8e428c226b950138208f88a46015d843d2f9
+---
+ src/lttng-syscalls.h | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/lttng-syscalls.h b/src/lttng-syscalls.h
+index e0f340ef..ce63973f 100644
+--- a/src/lttng-syscalls.h
++++ b/src/lttng-syscalls.h
+@@ -43,6 +43,7 @@ struct old_utimbuf32;
+ struct open_how;
+ struct rlimit64;
+ struct rseq;
++struct sched_attr;
+ struct sel_arg_struct;
+ struct statx;
+ struct user_msghdr;
+@@ -54,6 +55,12 @@ struct __kernel_timex;
+ struct __kernel_old_timeval;
+ struct __kernel_itimerspec;
+ 
++union bpf_attr;
++
++#ifndef __kernel_long_t
++typedef long __kernel_long_t;
++#endif
++
+ typedef __kernel_long_t __kernel_old_time_t;
+ typedef int __bitwise __kernel_rwf_t;
+ typedef __kernel_rwf_t rwf_t;
+-- 
+2.34.1
+

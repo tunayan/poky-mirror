@@ -1,0 +1,106 @@
+From 6a69df03b0135439242ea4b69bd0b5e691531b97 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?J=C3=A9r=C3=A9mie=20Galarneau?=
+ <jeremie.galarneau@efficios.com>
+Date: Tue, 8 Nov 2022 17:13:37 -0500
+Subject: [PATCH 01/23] Fix: syscalls-extractor: kallsyms_lookup_name no longer
+ available
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Upstream-Status: Backport
+
+Since v5.7, kallsyms_lookup_name is no longer available.
+
+In order to re-use the kallsyms wrapper, it is simpler to move the
+syscalls extractor module to the `src` directory and gate its
+compilation behind a new config option, CONFIG_LTTNG_SYSCALLS_EXTRACTOR.
+
+Signed-off-by: Jérémie Galarneau <jeremie.galarneau@efficios.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Change-Id: I55d878dce55827d61035693aaf5865af3c4e775f
+---
+ Makefile                                                 | 7 +++++++
+ src/Kbuild                                               | 2 ++
+ src/Kconfig                                              | 9 +++++++++
+ .../lttng-syscalls-extractor.c                           | 6 ++++--
+ 4 files changed, 22 insertions(+), 2 deletions(-)
+ rename {include/instrumentation/syscalls/lttng-syscalls-extractor => src}/lttng-syscalls-extractor.c (89%)
+
+diff --git a/Makefile b/Makefile
+index 81bdedac..8d25816c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -33,6 +33,13 @@ modules:
+ 		KCPPFLAGS='$(LKCPPFLAGS)' \
+ 		modules
+ 
++syscalls_extractor:
++	$(MAKE) -C $(KERNELDIR) M=$(PWD)/src \
++		CONFIG_LTTNG_SYSCALLS_EXTRACTOR=m \
++		CONFIG_LTTNG=m CONFIG_LTTNG_CLOCK_PLUGIN_TEST=m \
++		KCPPFLAGS='$(LKCPPFLAGS)' \
++		modules
++
+ modules_install:
+ 	$(MAKE) -C $(KERNELDIR) M=$(PWD)/src \
+ 		CONFIG_LTTNG=m CONFIG_LTTNG_CLOCK_PLUGIN_TEST=m \
+diff --git a/src/Kbuild b/src/Kbuild
+index 7137874f..440b61d9 100644
+--- a/src/Kbuild
++++ b/src/Kbuild
+@@ -150,3 +150,5 @@ lttng-statedump-objs := lttng-statedump-impl.o
+ obj-$(CONFIG_LTTNG) += probes/
+ obj-$(CONFIG_LTTNG) += lib/
+ obj-$(CONFIG_LTTNG) += tests/
++
++obj-$(CONFIG_LTTNG_SYSCALLS_EXTRACTOR) += lttng-syscalls-extractor.o
+diff --git a/src/Kconfig b/src/Kconfig
+index a2a7b8f1..c1e5781b 100644
+--- a/src/Kconfig
++++ b/src/Kconfig
+@@ -25,4 +25,13 @@ config LTTNG_EXPERIMENTAL_BITWISE_ENUM
+ 
+ 	  If unsure, say N.
+ 
++config LTTNG_SYSCALLS_EXTRACTOR
++	bool "LTTng syscalls extraction helper"
++	default n
++	depends on LTTNG
++	help
++	  Enable the LTTng system call extraction helper which prints the list
++	  of enabled system calls, along with their signature, to dmesg. This
++	  is not meant for mainline; it is a development helper.
++
+ source "lttng/src/tests/Kconfig"
+diff --git a/include/instrumentation/syscalls/lttng-syscalls-extractor/lttng-syscalls-extractor.c b/src/lttng-syscalls-extractor.c
+similarity index 89%
+rename from include/instrumentation/syscalls/lttng-syscalls-extractor/lttng-syscalls-extractor.c
+rename to src/lttng-syscalls-extractor.c
+index 8670d25f..3fba1a94 100644
+--- a/include/instrumentation/syscalls/lttng-syscalls-extractor/lttng-syscalls-extractor.c
++++ b/src/lttng-syscalls-extractor.c
+@@ -17,8 +17,10 @@
+ #include <linux/kallsyms.h>
+ #include <linux/dcache.h>
+ #include <linux/trace_events.h>
++#include <linux/kprobes.h>
+ #include <trace/syscall.h>
+ #include <asm/syscall.h>
++#include <wrapper/kallsyms.h>
+ 
+ #ifndef CONFIG_FTRACE_SYSCALLS
+ #error "You need to set CONFIG_FTRACE_SYSCALLS=y"
+@@ -56,8 +58,8 @@ int init_module(void)
+ 	struct syscall_metadata *meta;
+ 	int i;
+ 
+-	__start_syscalls_metadata = (void *) kallsyms_lookup_name("__start_syscalls_metadata");
+-	__stop_syscalls_metadata = (void *) kallsyms_lookup_name("__stop_syscalls_metadata");
++	__start_syscalls_metadata = (void *) wrapper_kallsyms_lookup_name("__start_syscalls_metadata");
++	__stop_syscalls_metadata = (void *) wrapper_kallsyms_lookup_name("__stop_syscalls_metadata");
+ 
+ 	printk("%s---START---\n", ident);
+ 	for (i = 0; i < NR_syscalls; i++) {
+-- 
+2.34.1
+

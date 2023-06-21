@@ -1,0 +1,39 @@
+From 3178cd7c480a6a084c034d391e880d5209abb365 Mon Sep 17 00:00:00 2001
+From: Michael Jeanson <mjeanson@efficios.com>
+Date: Thu, 15 Dec 2022 16:11:03 -0500
+Subject: [PATCH 23/23] syscall inout table: fix old_select and old_mmap
+
+Upstream-Status: Backport
+
+Change-Id: I2e3c7a75ef6d4434daa06c389b1fa5bd1857df33
+Signed-off-by: Michael Jeanson <mjeanson@efficios.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+---
+ tools/syscalls/table-syscall-inout.txt | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/syscalls/table-syscall-inout.txt b/tools/syscalls/table-syscall-inout.txt
+index 928a4ed4..69a805a0 100644
+--- a/tools/syscalls/table-syscall-inout.txt
++++ b/tools/syscalls/table-syscall-inout.txt
+@@ -14,7 +14,7 @@ syscall newlstat nbargs 2 rw: (r, w)
+ syscall poll nbargs 3 rw: (rw, r, r)
+ syscall lseek nbargs 3 rw: (r, r, r)
+ syscall mmap nbargs 6 rw: (r, r, r, r, r, r)
+-syscall old_mmap nbargs 6 rw: (r, r, r, r, r, r)
++syscall old_mmap nbargs 1 rw: (r)
+ syscall mips_mmap nbargs 6 rw: (r, r, r, r, r, r)
+ syscall mmap2 nbargs 6 rw: (r, r, r, r, r, r)
+ syscall mips_mmap2 nbargs 6 rw: (r, r, r, r, r, r)
+@@ -39,7 +39,7 @@ syscall writev nbargs 3 rw: (r, rw, r)
+ syscall access nbargs 2 rw: (r, r)
+ syscall pipe nbargs 1 rw: (w)
+ syscall select nbargs 5 rw: (r, rw, rw, rw, rw)
+-syscall old_select nbargs 5 rw: (r, rw, rw, rw, rw)
++syscall old_select nbargs 1 rw: (r)
+ syscall sched_yield nbargs 0
+ syscall mremap nbargs 5 rw: (r, r, r, r, r)
+ syscall msync nbargs 3 rw: (r, r, r)
+-- 
+2.34.1
+
