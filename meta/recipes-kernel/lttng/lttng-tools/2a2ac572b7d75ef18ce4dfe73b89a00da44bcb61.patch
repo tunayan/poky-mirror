@@ -1,0 +1,1117 @@
+From 2a2ac572b7d75ef18ce4dfe73b89a00da44bcb61 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?J=C3=A9r=C3=A9mie=20Galarneau?=
+ <jeremie.galarneau@efficios.com>
+Date: Fri, 11 Nov 2022 17:35:12 -0500
+Subject: [PATCH] Tests: select_poll_epoll: Add support for _time64
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add support for the 64-bit time_t syscalls SYS_ppoll_time64
+and SYS_pselect6_time64.
+
+These syscalls exist on 32-bit platforms since the 5.1 kernel. 32-bit
+platforms with a 64-bit time_t only have these and don't have the
+original syscalls (such as 32-bit RISC-V).
+
+In doing so, the original syscalls were renamed to add the `_time32`
+suffix which causes the validation steps to fail.
+
+This patch ensures that the 64-bit version of the pselect and ppoll
+syscalls are called whenever they are available, allowing the tests to
+succeed.
+
+It also ensures that we don't attempt to use the 32-bit versions that
+don't exist on newer 32-bit platforms like RISCV-32.
+
+The test is also cleaned-up:
+
+  - The *invalid_pointer, *invalid_fd, *ulong_max, and *buffer_overflow
+    tests are identical except for the syscall(...) invocation. They are
+    combined to share as much code as possible regardless of which
+    syscalls the platform's ABI supports.
+
+  - Harmonized test names between the test script and test application
+
+  - Test names are printed when using the list option and used to launch
+    a test (rather than a numeric id)
+
+  - Allow the test application to print the list of supported tested
+    syscalls
+
+Upstream-Status: Backport
+
+Fixes: https://github.com/lttng/lttng-tools/pull/162
+Change-Id: I974f780022441fedfa45414d672092606e657cf6
+Signed-off-by: Jérémie Galarneau <jeremie.galarneau@efficios.com>
+---
+ tests/regression/kernel/select_poll_epoll.cpp | 366 ++++++++++++------
+ .../regression/kernel/test_select_poll_epoll  | 127 +++---
+ .../kernel/validate_select_poll_epoll.py      |  60 +--
+ 3 files changed, 343 insertions(+), 210 deletions(-)
+
+Index: lttng-tools-2.13.9/tests/regression/kernel/test_select_poll_epoll
+===================================================================
+--- lttng-tools-2.13.9.orig/tests/regression/kernel/test_select_poll_epoll
++++ lttng-tools-2.13.9/tests/regression/kernel/test_select_poll_epoll
+@@ -10,7 +10,6 @@ TEST_DESC="Kernel tracer - select, poll
+ CURDIR=$(dirname "$0")/
+ TESTDIR=$CURDIR/../..
+ VALIDATE_SCRIPT="$CURDIR/validate_select_poll_epoll.py"
+-NUM_TESTS=102
+ 
+ DISABLE_VALIDATE=0
+ # Babeltrace python bindings are required for the validation, but
+@@ -27,6 +26,12 @@ LAST_WARNING=$(dmesg | grep " WARNING:"
+ LAST_OOPS=$(dmesg | grep " OOPS:" | cut -d' ' -f1 | tail -1)
+ LAST_BUG=$(dmesg | grep " BUG:" | cut -d' ' -f1 | tail -1)
+ 
++SUPPORTED_SYSCALLS_LIST=$("$CURDIR"/select_poll_epoll --list-supported-test-syscalls)
++SUPPORTED_SYSCALLS_COUNT=$(echo $SUPPORTED_SYSCALLS_LIST | awk -F '[\t,]' '{print NF}')
++
++# Two tests validate their trace for every supported syscall
++NUM_TESTS=$((88+(2*SUPPORTED_SYSCALLS_COUNT)))
++
+ # shellcheck source=../../utils/utils.sh
+ source $TESTDIR/utils/utils.sh
+ 
+@@ -51,27 +56,19 @@ function test_working_cases()
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+-	# arm64 does not have epoll_wait
+-	uname -m | grep -E "aarch64" >/dev/null 2>&1
+-	if test $? = 0; then
+-		SYSCALL_LIST="select,pselect6,poll,ppoll,epoll_ctl,epoll_pwait"
+-	else
+-		SYSCALL_LIST="select,pselect6,poll,ppoll,epoll_ctl,epoll_wait,epoll_pwait"
+-	fi
+-
+ 	diag "Working cases for select, pselect6, poll, ppoll and epoll, waiting for input"
+ 
+ 	create_lttng_session_ok $SESSION_NAME "$TRACE_PATH"
+ 
+-	lttng_enable_kernel_syscall_ok $SESSION_NAME $SYSCALL_LIST
++	lttng_enable_kernel_syscall_ok $SESSION_NAME $SUPPORTED_SYSCALLS_LIST
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 1
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t working_cases
+ 	stop_lttng_tracing_ok
+ 
+-	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 1 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH"
++	validate_trace "$SUPPORTED_SYSCALLS_LIST" "$TRACE_PATH"
++	check_trace_content -t working_cases --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH"
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -85,27 +82,19 @@ function test_timeout_cases()
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+-	# arm64 does not have epoll_wait
+-	uname -m | grep -E "aarch64" >/dev/null 2>&1
+-	if test $? = 0; then
+-		SYSCALL_LIST="select,pselect6,poll,ppoll,epoll_ctl,epoll_pwait"
+-	else
+-		SYSCALL_LIST="select,pselect6,poll,ppoll,epoll_ctl,epoll_wait,epoll_pwait"
+-	fi
+-
+ 	diag "Timeout cases (1ms) for select, pselect6, poll, ppoll and epoll"
+ 
+ 	create_lttng_session_ok $SESSION_NAME "$TRACE_PATH"
+ 
+-	lttng_enable_kernel_syscall_ok $SESSION_NAME "$SYSCALL_LIST"
++	lttng_enable_kernel_syscall_ok $SESSION_NAME "$SUPPORTED_SYSCALLS_LIST"
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 2
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t working_cases_timeout
+ 	stop_lttng_tracing_ok
+ 
+-	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 2 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	validate_trace "$SUPPORTED_SYSCALLS_LIST" "$TRACE_PATH"
++	check_trace_content -t working_cases_timeout --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -116,7 +105,7 @@ function test_timeout_cases()
+ function test_pselect_invalid_fd()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="pselect6"
++	local SYSCALL_LIST="pselect6"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -128,11 +117,11 @@ function test_pselect_invalid_fd()
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 3
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t pselect_invalid_fd
+ 	stop_lttng_tracing_ok
+ 
+ 	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 3 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t pselect_invalid_fd --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -140,10 +129,10 @@ function test_pselect_invalid_fd()
+ 	rm -f "$TEST_VALIDATION_OUTPUT_PATH"
+ }
+ 
+-function test_big_ppoll()
++function test_ppoll_big()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="ppoll"
++	local SYSCALL_LIST="ppoll"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -155,11 +144,11 @@ function test_big_ppoll()
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 4
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t ppoll_big
+ 	stop_lttng_tracing_ok
+ 
+ 	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 4 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t ppoll_big --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -167,10 +156,10 @@ function test_big_ppoll()
+ 	rm -f "$TEST_VALIDATION_OUTPUT_PATH"
+ }
+ 
+-function test_ppoll_overflow()
++function test_ppoll_fds_buffer_overflow()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="ppoll"
++	local SYSCALL_LIST="ppoll"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -183,12 +172,12 @@ function test_ppoll_overflow()
+ 
+ 	start_lttng_tracing_ok
+ 	diag "Expect segfaults"
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 5
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t ppoll_fds_buffer_overflow
+ 	stop_lttng_tracing_ok
+ 
+ 	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+ 
+-	check_trace_content -t 5 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t ppoll_fds_buffer_overflow --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -196,10 +185,10 @@ function test_ppoll_overflow()
+ 	rm -f "$TEST_VALIDATION_OUTPUT_PATH"
+ }
+ 
+-function test_pselect_invalid_ptr()
++function test_pselect_invalid_pointer()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="pselect6"
++	local SYSCALL_LIST="pselect6"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -211,11 +200,11 @@ function test_pselect_invalid_ptr()
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 6
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t pselect_invalid_pointer
+ 	stop_lttng_tracing_ok
+ 
+ 	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 6 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t pselect_invalid_pointer --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -223,10 +212,10 @@ function test_pselect_invalid_ptr()
+ 	rm -f "$TEST_VALIDATION_OUTPUT_PATH"
+ }
+ 
+-function test_ppoll_ulong_max()
++function test_ppoll_fds_ulong_max()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="ppoll"
++	local SYSCALL_LIST="ppoll"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -238,11 +227,11 @@ function test_ppoll_ulong_max()
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 7
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t ppoll_fds_ulong_max
+ 	stop_lttng_tracing_ok
+ 
+ 	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 7 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t ppoll_fds_ulong_max --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -250,10 +239,10 @@ function test_ppoll_ulong_max()
+ 	rm -f "$TEST_VALIDATION_OUTPUT_PATH"
+ }
+ 
+-function test_epoll_pwait_invalid_ptr()
++function test_epoll_pwait_invalid_pointer()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="epoll_pwait"
++	local SYSCALL_LIST="epoll_pwait"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -265,11 +254,11 @@ function test_epoll_pwait_invalid_ptr()
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 8
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t epoll_pwait_invalid_pointer
+ 	stop_lttng_tracing_ok
+ 
+ 	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 8 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t epoll_pwait_invalid_pointer --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -277,10 +266,10 @@ function test_epoll_pwait_invalid_ptr()
+ 	rm -f "$TEST_VALIDATION_OUTPUT_PATH"
+ }
+ 
+-function test_epoll_pwait_int_max()
++function test_epoll_pwait_fds_int_max()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="epoll_pwait"
++	local SYSCALL_LIST="epoll_pwait"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -292,11 +281,11 @@ function test_epoll_pwait_int_max()
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 9
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t epoll_pwait_int_max
+ 	stop_lttng_tracing_ok
+ 
+ 	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 9 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t epoll_pwait_int_max --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -304,10 +293,10 @@ function test_epoll_pwait_int_max()
+ 	rm -f "$TEST_VALIDATION_OUTPUT_PATH"
+ }
+ 
+-function test_ppoll_concurrent()
++function test_ppoll_concurrent_write()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="ppoll"
++	local SYSCALL_LIST="ppoll"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -319,11 +308,11 @@ function test_ppoll_concurrent()
+ 	add_context_kernel_ok $SESSION_NAME channel0 pid
+ 
+ 	start_lttng_tracing_ok
+-	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 10
++	yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t ppoll_concurrent_write
+ 	stop_lttng_tracing_ok
+ 
+ 	validate_trace "$SYSCALL_LIST" "$TRACE_PATH"
+-	check_trace_content -t 10 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t ppoll_concurrent_write --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -331,10 +320,10 @@ function test_ppoll_concurrent()
+ 	rm -f "$TEST_VALIDATION_OUTPUT_PATH"
+ }
+ 
+-function test_epoll_pwait_concurrent()
++function test_epoll_pwait_concurrent_unmap()
+ {
+ 	SESSION_NAME="syscall_payload"
+-	SYSCALL_LIST="epoll_ctl,epoll_pwait"
++	local SYSCALL_LIST="epoll_ctl,epoll_pwait"
+ 	TRACE_PATH=$(mktemp --tmpdir -d "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_trace_path.XXXXXX")
+ 	TEST_VALIDATION_OUTPUT_PATH=$(mktemp --tmpdir -u "tmp.test_kernel_select_poll_epoll_${FUNCNAME[0]}_validation.XXXXXX")
+ 
+@@ -348,13 +337,13 @@ function test_epoll_pwait_concurrent()
+ 	start_lttng_tracing_ok
+ 	diag "Expect segfaults"
+ 	for i in $(seq 1 100); do
+-		yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t 11
++		yes | "$CURDIR"/select_poll_epoll --validation-file "$TEST_VALIDATION_OUTPUT_PATH" -t epoll_pwait_concurrent_munmap
+ 	done
+ 	stop_lttng_tracing_ok
+ 
+ 	# epoll_wait is not always generated in the trace (stress test)
+ 	validate_trace "epoll_ctl" "$TRACE_PATH"
+-	check_trace_content -t 11 --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
++	check_trace_content -t epoll_pwait_concurrent_munmap --validation-file "$TEST_VALIDATION_OUTPUT_PATH" "$TRACE_PATH" 2>/dev/null
+ 
+ 	destroy_lttng_session_ok $SESSION_NAME
+ 
+@@ -380,6 +369,8 @@ else
+ 	isroot=0
+ fi
+ 
++diag "Supported syscalls are $SUPPORTED_SYSCALLS_LIST"
++
+ skip $isroot "Root access is needed. Skipping all tests." $NUM_TESTS ||
+ {
+ 	validate_lttng_modules_present
+@@ -389,14 +380,14 @@ skip $isroot "Root access is needed. Ski
+ 	test_working_cases
+ 	test_timeout_cases
+ 	test_pselect_invalid_fd
+-	test_big_ppoll
+-	test_ppoll_overflow
+-	test_pselect_invalid_ptr
+-	test_ppoll_ulong_max
+-	test_epoll_pwait_invalid_ptr
+-	test_epoll_pwait_int_max
+-	test_ppoll_concurrent
+-	test_epoll_pwait_concurrent
++	test_ppoll_big
++	test_ppoll_fds_buffer_overflow
++	test_pselect_invalid_pointer
++	test_ppoll_fds_ulong_max
++	test_epoll_pwait_invalid_pointer
++	test_epoll_pwait_fds_int_max
++	test_ppoll_concurrent_write
++	test_epoll_pwait_concurrent_unmap
+ 
+ 	stop_lttng_sessiond
+ 
+Index: lttng-tools-2.13.9/tests/regression/kernel/validate_select_poll_epoll.py
+===================================================================
+--- lttng-tools-2.13.9.orig/tests/regression/kernel/validate_select_poll_epoll.py
++++ lttng-tools-2.13.9/tests/regression/kernel/validate_select_poll_epoll.py
+@@ -226,7 +226,7 @@ class TraceParser:
+         pass
+ 
+ 
+-class Test1(TraceParser):
++class WorkingCases(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+ 
+@@ -401,7 +401,7 @@ class Test1(TraceParser):
+         # Save values of local variables to print in case of test failure
+         self.recorded_values["epoll_pwait_exit"] = locals()
+ 
+-class Test2(TraceParser):
++class WorkingCasesTimeout(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+         self.expect["select_entry"]["select_timeout_in_fd0"] = 0
+@@ -513,7 +513,7 @@ class Test2(TraceParser):
+         self.recorded_values["epoll_wait_exit"] = locals()
+ 
+ 
+-class Test3(TraceParser):
++class PselectInvalidFd(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+         self.expect["select_entry"]["select_invalid_fd_in"] = 0
+@@ -542,7 +542,7 @@ class Test3(TraceParser):
+         self.recorded_values["select_exit"] = locals()
+ 
+ 
+-class Test4(TraceParser):
++class PpollBig(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+         self.expect["poll_entry"]["big_poll_in"] = 0
+@@ -582,7 +582,7 @@ class Test4(TraceParser):
+         # Save values of local variables to print in case of test failure
+         self.recorded_values["poll_exit"] = locals()
+ 
+-class Test5(TraceParser):
++class PpollFdsBufferOverflow(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+         self.expect["poll_entry"]["poll_overflow_in"] = 0
+@@ -616,7 +616,7 @@ class Test5(TraceParser):
+         self.recorded_values["poll_exit"] = locals()
+ 
+ 
+-class Test6(TraceParser):
++class PselectInvalidPointer(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+         self.expect["select_entry"]["pselect_invalid_in"] = 0
+@@ -649,7 +649,7 @@ class Test6(TraceParser):
+         self.recorded_values["select_exit"] = locals()
+ 
+ 
+-class Test7(TraceParser):
++class PpollFdsULongMax(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+         self.expect["poll_entry"]["poll_max_in"] = 0
+@@ -680,7 +680,7 @@ class Test7(TraceParser):
+         self.recorded_values["poll_exit"] = locals()
+ 
+ 
+-class Test8(TraceParser):
++class EpollPwaitInvalidPointer(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+ 
+@@ -717,7 +717,7 @@ class Test8(TraceParser):
+         self.recorded_values["epoll_wait_exit"] = locals()
+ 
+ 
+-class Test9(TraceParser):
++class EpollPwaitIntMax(TraceParser):
+     def __init__(self, trace, validation_args):
+         super().__init__(trace, validation_args['pid'])
+ 
+@@ -755,7 +755,7 @@ class Test9(TraceParser):
+ if __name__ == "__main__":
+     parser = argparse.ArgumentParser(description='Trace parser')
+     parser.add_argument('path', metavar="<path/to/trace>", help='Trace path')
+-    parser.add_argument('-t', '--test', type=int, help='Test to validate')
++    parser.add_argument('-t', '--test', type=str, help='Test to validate')
+     parser.add_argument('-o', '--validation-file', type=str, help='Validation file path')
+     args = parser.parse_args()
+ 
+@@ -781,28 +781,28 @@ if __name__ == "__main__":
+ 
+     t = None
+ 
+-    if args.test == 1:
+-        t = Test1(traces, test_validation_args)
+-    elif args.test == 2:
+-        t = Test2(traces, test_validation_args)
+-    elif args.test == 3:
+-        t = Test3(traces, test_validation_args)
+-    elif args.test == 4:
+-        t = Test4(traces, test_validation_args)
+-    elif args.test == 5:
+-        t = Test5(traces, test_validation_args)
+-    elif args.test == 6:
+-        t = Test6(traces, test_validation_args)
+-    elif args.test == 7:
+-        t = Test7(traces, test_validation_args)
+-    elif args.test == 8:
+-        t = Test8(traces, test_validation_args)
+-    elif args.test == 9:
+-        t = Test9(traces, test_validation_args)
+-    elif args.test == 10:
++    if args.test == "working_cases":
++        t = WorkingCases(traces, test_validation_args)
++    elif args.test == "working_cases_timeout":
++        t = WorkingCasesTimeout(traces, test_validation_args)
++    elif args.test == "pselect_invalid_fd":
++        t = PselectInvalidFd(traces, test_validation_args)
++    elif args.test == "ppoll_big":
++        t = PpollBig(traces, test_validation_args)
++    elif args.test == "ppoll_fds_buffer_overflow":
++        t = PpollFdsBufferOverflow(traces, test_validation_args)
++    elif args.test == "pselect_invalid_pointer":
++        t = PselectInvalidPointer(traces, test_validation_args)
++    elif args.test == "ppoll_fds_ulong_max":
++        t = PpollFdsULongMax(traces, test_validation_args)
++    elif args.test == "epoll_pwait_invalid_pointer":
++        t = EpollPwaitInvalidPointer(traces, test_validation_args)
++    elif args.test == "epoll_pwait_int_max":
++        t = EpollPwaitIntMax(traces, test_validation_args)
++    elif args.test == "ppoll_concurrent_write":
+         # stress test, nothing reliable to check
+         ret = 0
+-    elif args.test == 11:
++    elif args.test == "epoll_pwait_concurrent_munmap":
+         # stress test, nothing reliable to check
+         ret = 0
+     else:
+Index: lttng-tools-2.13.9/tests/regression/kernel/select_poll_epoll.c
+===================================================================
+--- lttng-tools-2.13.9.orig/tests/regression/kernel/select_poll_epoll.c
++++ lttng-tools-2.13.9/tests/regression/kernel/select_poll_epoll.c
+@@ -5,6 +5,7 @@
+  *
+  */
+ 
++#include <errno.h>
+ #include <stdio.h>
+ #include <poll.h>
+ #include <signal.h>
+@@ -51,6 +52,7 @@ static void test_ppoll_big(FILE *validat
+ static void ppoll_fds_buffer_overflow(FILE *validation_output_file);
+ static void pselect_invalid_pointer(FILE *validation_output_file);
+ static void ppoll_fds_ulong_max(FILE *validation_output_file);
++static void ppoll_fds_buffer_overflow(FILE *validation_output_file);
+ static void epoll_pwait_invalid_pointer(FILE *validation_output_file);
+ static void epoll_pwait_int_max(FILE *validation_output_file);
+ static void ppoll_concurrent_write(FILE *validation_output_file);
+@@ -62,19 +64,68 @@ static const struct test_case {
+ 	test_case_cb run;
+ 	bool produces_validation_info;
+ 	int timeout;
++	const char *name;
++	const char *description;
+ } test_cases [] =
+ {
+-	{ .run = run_working_cases, .produces_validation_info = true, .timeout = -1 },
+-	{ .run = run_working_cases, .produces_validation_info = true, .timeout = 1 },
+-	{ .run = pselect_invalid_fd, .produces_validation_info = false },
+-	{ .run = test_ppoll_big, .produces_validation_info = false },
+-	{ .run = ppoll_fds_buffer_overflow, .produces_validation_info = false },
+-	{ .run = pselect_invalid_pointer, .produces_validation_info = false },
+-	{ .run = ppoll_fds_ulong_max, .produces_validation_info = false },
+-	{ .run = epoll_pwait_invalid_pointer, .produces_validation_info = true },
+-	{ .run = epoll_pwait_int_max, .produces_validation_info = true },
+-	{ .run = ppoll_concurrent_write, .produces_validation_info = false },
+-	{ .run = epoll_pwait_concurrent_munmap, .produces_validation_info = true },
++	{ .run = run_working_cases,
++	  .produces_validation_info = true,
++	  .timeout = -1,
++	  .name = "working_cases",
++	  .description =
++		  "Working cases for select, pselect6, poll, ppoll and epoll, waiting for input" },
++	{ .run = run_working_cases,
++	  .produces_validation_info = true,
++	  .timeout = 1,
++	  .name = "working_cases_timeout",
++	  .description = "Timeout cases (1ms) for select, pselect6, poll, ppoll and epoll" },
++	{ .run = test_ppoll_big,
++	  .produces_validation_info = false,
++	  .timeout = 0,
++	  .name = "ppoll_big",
++	  .description = "ppoll with " XSTR(MAX_FDS) " FDs" },
++	{ .run = epoll_pwait_invalid_pointer,
++	  .produces_validation_info = true,
++	  .timeout = 0,
++	  .name = "epoll_pwait_invalid_pointer",
++	  .description = "epoll_pwait with an invalid pointer, waits for input" },
++	{ .run = epoll_pwait_int_max,
++	  .produces_validation_info = true,
++	  .timeout = 0,
++	  .name = "epoll_pwait_int_max",
++	  .description = "epoll_pwait with maxevents set to INT_MAX waits for input" },
++	{ .run = ppoll_concurrent_write,
++	  .produces_validation_info = false,
++	  .timeout = 0,
++	  .name = "ppoll_concurrent_write",
++	  .description =
++		  "ppoll with concurrent updates of the structure from user-space, stress test (3000 iterations) waits for input + timeout 1ms" },
++	{ .run = epoll_pwait_concurrent_munmap,
++	  .produces_validation_info = true,
++	  .timeout = 0,
++	  .name = "epoll_pwait_concurrent_munmap",
++	  .description =
++		  "epoll_pwait with concurrent munmap of the buffer from user-space, should randomly segfault, run multiple times, waits for input + timeout 1ms" },
++	{ .run = pselect_invalid_pointer,
++	  .produces_validation_info = false,
++	  .timeout = 0,
++	  .name = "pselect_invalid_pointer",
++	  .description = "pselect with an invalid pointer, waits for input" },
++	{ .run = pselect_invalid_fd,
++	  .produces_validation_info = false,
++	  .timeout = 0,
++	  .name = "pselect_invalid_fd",
++	  .description = "pselect with an invalid fd" },
++	{ .run = ppoll_fds_ulong_max,
++	  .produces_validation_info = false,
++	  .timeout = 0,
++	  .name = "ppoll_fds_ulong_max",
++	  .description = "ppoll with ulong_max fds, waits for input" },
++	{ .run = ppoll_fds_buffer_overflow,
++	  .produces_validation_info = false,
++	  .timeout = 0,
++	  .name = "ppoll_fds_buffer_overflow",
++	  .description = "ppoll buffer overflow, should segfault, waits for input" },
+ };
+ 
+ struct ppoll_thread_data {
+@@ -129,8 +180,7 @@ end:
+ 	return;
+ }
+ 
+-static
+-void test_pselect(void)
++static void test_pselect_generic(long int syscall_id)
+ {
+ 	fd_set rfds;
+ 	struct timespec tv;
+@@ -144,9 +194,9 @@ void test_pselect(void)
+ 	tv.tv_nsec = timeout * MSEC_PER_NSEC;
+ 
+ 	if (timeout > 0) {
+-		ret = pselect(1, &rfds, NULL, NULL, &tv, NULL);
++		ret = syscall(syscall_id, 1, &rfds, NULL, NULL, &tv, NULL);
+ 	} else {
+-		ret = pselect(1, &rfds, NULL, NULL, NULL, NULL);
++		ret = syscall(syscall_id, 1, &rfds, NULL, NULL, NULL, NULL);
+ 	}
+ 
+ 	if (ret == -1) {
+@@ -159,8 +209,12 @@ void test_pselect(void)
+ 	}
+ }
+ 
+-static
+-void test_select(void)
++static void test_pselect(void)
++{
++	test_pselect_generic(SYS_pselect6);
++}
++
++static void test_select(void)
+ {
+ 	fd_set rfds;
+ 	struct timeval tv;
+@@ -211,8 +265,7 @@ void test_poll(void)
+ 	}
+ }
+ 
+-static
+-void test_ppoll(void)
++static void test_ppoll_generic(long int syscall_id)
+ {
+ 	struct pollfd ufds[NB_FD];
+ 	char buf[BUF_SIZE];
+@@ -225,9 +278,9 @@ void test_ppoll(void)
+ 	if (timeout > 0) {
+ 		ts.tv_sec = 0;
+ 		ts.tv_nsec = timeout * MSEC_PER_NSEC;
+-		ret = ppoll(ufds, 1, &ts, NULL);
++		ret = syscall(syscall_id, ufds, 1, &ts, NULL);
+ 	} else {
+-		ret = ppoll(ufds, 1, NULL, NULL);
++		ret = syscall(syscall_id, ufds, 1, NULL, NULL);
+ 	}
+ 
+ 
+@@ -241,6 +294,11 @@ void test_ppoll(void)
+ 	}
+ }
+ 
++static void test_ppoll(void)
++{
++	test_ppoll_generic(SYS_ppoll);
++}
++
+ static
+ void test_ppoll_big(FILE *validation_output_file)
+ {
+@@ -402,12 +460,21 @@ void run_working_cases(FILE *validation_
+ 		wait_fd = pipe_fds[0];
+ 	}
+ 	test_select();
++#ifdef sys_pselect6_time64
++	test_pselect_time64();
++#else
+ 	test_pselect();
++#endif /* sys_pselect6_time64 */
+ 	test_select_big();
+ 	test_poll();
+ 	test_ppoll();
++#ifdef sys_ppoll_time64
++	test_ppoll_time64();
++#else
++	test_ppoll();
++#endif /* sys_ppoll_time64 */
+ 
+-	ret = fprintf(validation_output_file, "{ \"pid\": %i", getpid());
++	ret = fprintf(validation_output_file, "{\"pid\": %i", getpid());
+ 	if (ret < 0) {
+ 		PERROR("Failed to write pid to test validation file");
+ 		goto end;
+@@ -438,12 +505,11 @@ end:
+ }
+ 
+ /*
+- * Ask for 100 FDs in a buffer for allocated for only 1 FD, should
+- * segfault (eventually with a "*** stack smashing detected ***" message).
+- * The event should contain an array of 100 FDs filled with garbage.
++ * Ask for ULONG_MAX FDs in a buffer for allocated for only 1 FD, should
++ * cleanly fail with a "Invalid argument".
++ * The event should contain an empty array of FDs and overflow = 1.
+  */
+-static
+-void ppoll_fds_buffer_overflow(FILE *validation_output_file)
++static void generic_ppoll_fds_ulong_max(long int syscall_id)
+ {
+ 	struct pollfd ufds[NB_FD];
+ 	char buf[BUF_SIZE];
+@@ -452,25 +518,25 @@ void ppoll_fds_buffer_overflow(FILE *val
+ 	ufds[0].fd = wait_fd;
+ 	ufds[0].events = POLLIN|POLLPRI;
+ 
+-	ret = syscall(SYS_ppoll, ufds, 100, NULL, NULL);
+-
++	/* ppoll and/or ppoll_time64 are used, depending on platform support. */
++	ret = syscall(syscall_id, ufds, ULONG_MAX, NULL, NULL);
+ 	if (ret < 0) {
+ 		PERROR("ppoll");
++		/* Expected error. */
+ 	} else if (ret > 0) {
+ 		ret = read(wait_fd, buf, BUF_SIZE);
+ 		if (ret < 0) {
+-			PERROR("[ppoll] read");
++			PERROR("Failed to read from wait file descriptor");
+ 		}
+ 	}
+ }
+ 
+ /*
+- * Ask for ULONG_MAX FDs in a buffer for allocated for only 1 FD, should
+- * cleanly fail with a "Invalid argument".
+- * The event should contain an empty array of FDs and overflow = 1.
++ * Ask for 100 FDs in a buffer for allocated for only 1 FD, should
++ * segfault (eventually with a "*** stack smashing detected ***" message).
++ * The event should contain an array of 100 FDs filled with garbage.
+  */
+-static
+-void ppoll_fds_ulong_max(FILE *validation_output_file)
++static void generic_ppoll_fds_buffer_overflow(long int syscall_id)
+ {
+ 	struct pollfd ufds[NB_FD];
+ 	char buf[BUF_SIZE];
+@@ -479,23 +545,41 @@ void ppoll_fds_ulong_max(FILE *validatio
+ 	ufds[0].fd = wait_fd;
+ 	ufds[0].events = POLLIN|POLLPRI;
+ 
+-	ret = syscall(SYS_ppoll, ufds, ULONG_MAX, NULL, NULL);
++	/* ppoll and/or ppoll_time64 are used, depending on platform support. */
++	ret = syscall(syscall_id, ufds, 100, NULL, NULL);
+ 	if (ret < 0) {
+-		/* Expected error. */
++		PERROR("Failed to wait using ppoll/ppoll_time64");
+ 	} else if (ret > 0) {
+ 		ret = read(wait_fd, buf, BUF_SIZE);
+ 		if (ret < 0) {
+-			PERROR("[ppoll] read");
++			PERROR("Failed to read from wait file descriptor");
+ 		}
+ 	}
+ }
+ 
++static void ppoll_fds_ulong_max(FILE *validation_output_file __attribute__((unused)))
++{
++#ifdef SYS_ppoll_time64
++	generic_ppoll_fds_ulong_max(SYS_ppoll_time64);
++#else
++	generic_ppoll_fds_ulong_max(SYS_ppoll);
++#endif /* SYS_ppoll_time64 */
++}
++
++static void ppoll_fds_buffer_overflow(FILE *validation_output_file __attribute__((unused)))
++{
++#ifdef SYS_ppoll_time64
++	generic_ppoll_fds_buffer_overflow(SYS_ppoll_time64);
++#else
++	generic_ppoll_fds_buffer_overflow(SYS_ppoll);
++#endif /* SYS_ppoll_time64 */
++}
++
+ /*
+  * Pass an invalid file descriptor to pselect6(). The syscall should return
+  * -EBADF. The recorded event should contain a "ret = -EBADF (-9)".
+  */
+-static
+-void pselect_invalid_fd(FILE *validation_output_file)
++static void generic_invalid_fd(long int syscall_id)
+ {
+ 	fd_set rfds;
+ 	int ret;
+@@ -507,26 +591,26 @@ void pselect_invalid_fd(FILE *validation
+ 	 */
+ 	fd = open("/dev/null", O_RDONLY);
+ 	if (fd == -1) {
+-		PERROR("open");
++		PERROR("Failed to open /dev/null");
+ 		goto error;
+ 	}
+ 
+ 	ret = close(fd);
+ 	if (ret == -1) {
+-		PERROR("close");
++		PERROR("Failed to close /dev/null file descriptor");
+ 		goto error;
+ 	}
+ 
+ 	FD_ZERO(&rfds);
+ 	FD_SET(fd, &rfds);
+ 
+-	ret = syscall(SYS_pselect6, fd + 1, &rfds, NULL, NULL, NULL, NULL);
++	ret = syscall(syscall_id, fd + 1, &rfds, NULL, NULL, NULL, NULL);
+ 	if (ret == -1) {
+ 		/* Expected error. */
+ 	} else if (ret) {
+ 		ret = read(wait_fd, buf, BUF_SIZE);
+ 		if (ret < 0) {
+-			PERROR("[pselect] read");
++			PERROR("Failed to read from wait file descriptor");
+ 		}
+ 	}
+ error:
+@@ -537,8 +621,7 @@ error:
+  * Invalid pointer as writefds, should output a ppoll event
+  * with 0 FDs.
+  */
+-static
+-void pselect_invalid_pointer(FILE *validation_output_file)
++static void generic_invalid_pointer(long int syscall_id)
+ {
+ 	fd_set rfds;
+ 	int ret;
+@@ -548,18 +631,40 @@ void pselect_invalid_pointer(FILE *valid
+ 	FD_ZERO(&rfds);
+ 	FD_SET(wait_fd, &rfds);
+ 
+-	ret = syscall(SYS_pselect6, 1, &rfds, (fd_set *) invalid, NULL, NULL,
+-			NULL);
++	ret = syscall(syscall_id, 1, &rfds, (fd_set *) invalid, NULL, NULL, NULL);
+ 	if (ret == -1) {
+ 		/* Expected error. */
+ 	} else if (ret) {
+ 		ret = read(wait_fd, buf, BUF_SIZE);
+ 		if (ret < 0) {
+-			PERROR("[pselect] read");
++			PERROR("Failed to read from wait file descriptor");
+ 		}
+ 	}
+ }
+ 
++static void pselect_invalid_fd(FILE *validation_output_file __attribute__((unused)))
++{
++#ifdef SYS_pselect6_time64
++	generic_invalid_fd(SYS_pselect6_time64);
++#else
++	generic_invalid_fd(SYS_pselect6);
++#endif /* SYS_pselect6_time64 */
++}
++
++/*
++ * Invalid pointer as writefds, should output a ppoll event
++ * with 0 FDs.
++ */
++static void pselect_invalid_pointer(FILE *validation_output_file __attribute__((unused)))
++{
++#ifdef SYS_pselect6_time64
++	generic_invalid_pointer(SYS_pselect6_time64);
++#else
++	generic_invalid_pointer(SYS_pselect6);
++#endif /* SYS_pselect6_time64 */
++}
++
++
+ /*
+  * Pass an invalid pointer to epoll_pwait, should fail with
+  * "Bad address", the event returns 0 FDs.
+@@ -578,9 +683,7 @@ void epoll_pwait_invalid_pointer(FILE *v
+ 		goto end;
+ 	}
+ 
+-	ret = fprintf(validation_output_file,
+-			"{ \"epollfd\": %i, \"pid\": %i }", epollfd,
+-			getpid());
++	ret = fprintf(validation_output_file, "{\"epollfd\": %i, \"pid\": %i }", epollfd, getpid());
+ 	if (ret < 0) {
+ 		PERROR("[epoll_pwait] Failed to write test validation output");
+ 		goto error;
+@@ -632,9 +735,7 @@ void epoll_pwait_int_max(FILE *validatio
+ 		goto end;
+ 	}
+ 
+-	ret = fprintf(validation_output_file,
+-			"{ \"epollfd\": %i, \"pid\": %i }", epollfd,
+-			getpid());
++	ret = fprintf(validation_output_file, "{\"epollfd\": %i, \"pid\": %i }", epollfd, getpid());
+ 	if (ret < 0) {
+ 		PERROR("[epoll_pwait] Failed to write test validation output");
+ 		goto error;
+@@ -890,51 +991,85 @@ end:
+ 	return;
+ }
+ 
+-static
+-void print_list(void)
++static void print_list(void)
+ {
+-	fprintf(stderr, "Test list (-t X):\n");
+-	fprintf(stderr, "\t1: Working cases for select, pselect6, poll, ppoll "
+-			"and epoll, waiting for input\n");
+-	fprintf(stderr, "\t2: Timeout cases (1ms) for select, pselect6, poll, "
+-			"ppoll and epoll\n");
+-	fprintf(stderr, "\t3: pselect with an invalid fd\n");
+-	fprintf(stderr, "\t4: ppoll with %d FDs\n", MAX_FDS);
+-	fprintf(stderr, "\t5: ppoll buffer overflow, should segfault, waits "
+-			"for input\n");
+-	fprintf(stderr, "\t6: pselect with an invalid pointer, waits for "
+-			"input\n");
+-	fprintf(stderr, "\t7: ppoll with ulong_max fds, waits for input\n");
+-	fprintf(stderr, "\t8: epoll_pwait with an invalid pointer, waits for "
+-			"input\n");
+-	fprintf(stderr, "\t9: epoll_pwait with maxevents set to INT_MAX, "
+-			"waits for input\n");
+-	fprintf(stderr, "\t10: ppoll with concurrent updates of the structure "
+-			"from user-space, stress test (3000 iterations), "
+-			"waits for input + timeout 1ms\n");
+-	fprintf(stderr, "\t11: epoll_pwait with concurrent munmap of the buffer "
+-			"from user-space, should randomly segfault, run "
+-			"multiple times, waits for input + timeout 1ms\n");
++	printf("Test list (-t X):\n");
++
++	for (size_t test_id = 0; test_id < ARRAY_SIZE(test_cases); test_id++) {
++		printf("\t%zu: %s - %s\n",
++		       test_id + 1,
++		       test_cases[test_id].name,
++		       test_cases[test_id].description);
++	}
++}
++
++static void print_test_syscalls(void)
++{
++	const char *supported_syscalls[] = {
++#ifdef SYS_select
++		"select",
++#endif
++#if defined SYS_pselect6_time64 && defined SYS_pselect6
++		"pselect6",
++		"pselect6_time32",
++#elif defined SYS_pselect6_time32 ^ defined SYS_pselect6
++		"pselect6",
++#endif /* SYS_pselect6_time64 && defined SYS_pselect6 */
++#ifdef SYS_poll
++		"poll",
++#endif
++#if defined SYS_ppoll && defined SYS_ppoll_time64
++		"ppoll",
++		"ppoll_time32",
++#elif defined SYS_ppoll ^ defined SYS_ppoll_time64
++		"ppoll",
++#endif /* defined SYS_ppoll && defined SYS_ppoll_time64 */
++#ifdef SYS_epoll_ctl
++		"epoll_ctl",
++#endif
++#ifdef SYS_epoll_wait
++		"epoll_wait",
++#endif
++#ifdef SYS_epoll_pwait
++		"epoll_pwait",
++#endif
++	};
++
++	for (size_t i = 0; i < ARRAY_SIZE(supported_syscalls); i++) {
++		fputs(supported_syscalls[i], stdout);
++		fputs(i != ARRAY_SIZE(supported_syscalls) - 1 ? "," : "\n", stdout);
++	}
+ }
+ 
+ int main(int argc, const char **argv)
+ {
+-	int c, ret, test = -1;
++	int c, ret;
++	const char *test_name;
+ 	poptContext optCon;
+ 	struct rlimit open_lim;
+ 	FILE *test_validation_output_file = NULL;
+ 	const char *test_validation_output_file_path = NULL;
+ 	struct poptOption optionsTable[] = {
+-		{ "test", 't', POPT_ARG_INT, &test, 0,
+-			"Test to run", NULL },
+-		{ "list", 'l', 0, 0, 'l',
+-			"List of tests (-t X)", NULL },
+-		{ "validation-file", 'o', POPT_ARG_STRING, &test_validation_output_file_path, 0,
+-			"Test case output", NULL },
+-		POPT_AUTOHELP
+-		{ NULL, 0, 0, NULL, 0 }
++		{ "test", 't', POPT_ARG_STRING, &test_name, 0, "Name of test to run", NULL },
++		{ "list-tests", 'l', 0, 0, 'l', "List tests (-t X)", NULL },
++		{ "list-supported-test-syscalls",
++		  's',
++		  0,
++		  0,
++		  's',
++		  "List supported test syscalls",
++		  NULL },
++		{ "validation-file",
++		  'o',
++		  POPT_ARG_STRING,
++		  &test_validation_output_file_path,
++		  0,
++		  "Test case output",
++		  NULL },
++		POPT_AUTOHELP{ NULL, 0, 0, NULL, 0, NULL, NULL }
+ 	};
+ 	const struct test_case *test_case;
++	size_t test_case_id;
+ 
+ 	optCon = poptGetContext(NULL, argc, argv, optionsTable, 0);
+ 
+@@ -951,6 +1086,9 @@ int main(int argc, const char **argv)
+ 		case 'l':
+ 			print_list();
+ 			goto end;
++		case 's':
++			print_test_syscalls();
++			goto end;
+ 		}
+ 	}
+ 
+@@ -986,12 +1124,19 @@ int main(int argc, const char **argv)
+ 	wait_fd = STDIN_FILENO;
+ 
+ 	/* Test case id is 1-based. */
+-	if (test < 1 || test > ARRAY_SIZE(test_cases)) {
++	for (test_case_id = 0; test_case_id < ARRAY_SIZE(test_cases); test_case_id++) {
++		if (!strcmp(test_cases[test_case_id].name, test_name)) {
++			break;
++		}
++	}
++
++	if (test_case_id == ARRAY_SIZE(test_cases)) {
+ 		poptPrintUsage(optCon, stderr, 0);
+ 		ret = -1;
++		goto end;
+ 	}
+ 
+-	test_case = &test_cases[test - 1];
++	test_case = &test_cases[test_case_id];
+ 
+ 	timeout = test_case->timeout;
+ 	if (!test_case->produces_validation_info) {
+@@ -999,7 +1144,7 @@ int main(int argc, const char **argv)
+ 		 * All test cases need to provide, at minimum, the pid of the
+ 		 * test application.
+ 		 */
+-		ret = fprintf(test_validation_output_file, "{ \"pid\": %i }", getpid());
++		ret = fprintf(test_validation_output_file, "{\"pid\": %i }", getpid());
+ 		if (ret < 0) {
+ 			PERROR("Failed to write application pid to test validation file");
+ 			goto end;

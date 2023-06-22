@@ -66,22 +66,15 @@ Signed-off-by: JÃ©rÃ©mie Galarneau <jeremie.galarneau@efficios.com>
  tests/utils/parse-callstack.py | 25 +++++++++++++++++--------
  1 file changed, 17 insertions(+), 8 deletions(-)
 
-diff --git a/tests/utils/parse-callstack.py b/tests/utils/parse-callstack.py
-index c3f0e2e9bc..029100b618 100755
---- a/tests/utils/parse-callstack.py
-+++ b/tests/utils/parse-callstack.py
+Index: lttng-tools-2.13.9/tests/utils/parse-callstack.py
+===================================================================
+--- lttng-tools-2.13.9.orig/tests/utils/parse-callstack.py
++++ lttng-tools-2.13.9/tests/utils/parse-callstack.py
 @@ -26,14 +26,23 @@ def addr2line(executable, addr):
  
      status = subprocess.run(cmd, stdout=subprocess.PIPE, check=True)
  
 -    addr2line_output = status.stdout.decode("utf-8")
--
--    # Omit the last 2 lines as the caller of main can not be determine
--    fcts = [addr2line_output.split()[-2]]
--
--    fcts = [ f for f in fcts if '??' not in f]
--
--    return fcts
 +    addr2line_output = status.stdout.decode("utf-8").splitlines()
 +    # addr2line's output is made of 3-tuples:
 +    #   - address
@@ -97,11 +90,14 @@ index c3f0e2e9bc..029100b618 100755
 +        # Filter-out unresolved functions
 +        if "??" not in function_name:
 +            function_names.append(addr2line_output[address_line_number + 1])
-+
+ 
+-    # Omit the last 2 lines as the caller of main can not be determine
+-    fcts = [addr2line_output.split()[-2]]
+-
+-    fcts = [ f for f in fcts if '??' not in f]
+-
+-    return fcts
 +    return function_names
  
  def extract_user_func_names(executable, raw_callstack):
      """
--- 
-2.34.1
-

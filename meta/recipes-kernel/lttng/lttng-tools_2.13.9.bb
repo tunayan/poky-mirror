@@ -38,6 +38,7 @@ SRC_URI = "https://lttng.org/files/lttng-tools/lttng-tools-${PV}.tar.bz2 \
            file://disable-tests.patch \
            file://0001-compat-Define-off64_t-as-off_t-on-linux.patch \
            file://40b2a4a793c81221a28f822d07135069456ea021.patch \
+           file://2a2ac572b7d75ef18ce4dfe73b89a00da44bcb61.patch \
            file://gcc13-ptest-fix.patch \
            "
 

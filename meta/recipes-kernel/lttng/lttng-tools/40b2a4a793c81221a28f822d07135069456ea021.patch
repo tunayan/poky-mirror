@@ -22,10 +22,10 @@ Signed-off-by: JÃ©rÃ©mie Galarneau <jeremie.galarneau@efficios.com>
  tests/utils/parse-callstack.py | 6 ++++--
  1 file changed, 4 insertions(+), 2 deletions(-)
 
-diff --git a/tests/utils/parse-callstack.py b/tests/utils/parse-callstack.py
-index 3bfddd9ef..c3f0e2e9b 100755
---- a/tests/utils/parse-callstack.py
-+++ b/tests/utils/parse-callstack.py
+Index: lttng-tools-2.13.9/tests/utils/parse-callstack.py
+===================================================================
+--- lttng-tools-2.13.9.orig/tests/utils/parse-callstack.py
++++ lttng-tools-2.13.9/tests/utils/parse-callstack.py
 @@ -1,4 +1,4 @@
 -#!/usr/bin/python3
 +#!/usr/bin/env python3
@@ -43,6 +43,3 @@ index 3bfddd9ef..c3f0e2e9b 100755
  
      # Omit the last 2 lines as the caller of main can not be determine
      fcts = [addr2line_output.split()[-2]]
--- 
-2.34.1
-
